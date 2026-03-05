@@ -11,7 +11,7 @@ from scripts.ole.inject import inject_cdx_stream, patch_direntry_size
 from scripts.ole.ole_builder import build_chemdraw_ole
 from scripts.render.preview import render_png
 from scripts.xlsx.namespaces import register_namespaces
-from scripts.xlsx.position import compute_anchors
+from scripts.xlsx.position import compute_anchors, translate_anchors
 from scripts.xlsx.xlsx_builder import build_xlsx_skeleton
 
 # -- legacy template-mode imports (only used when --template is given) --
@@ -19,6 +19,7 @@ from scripts.xlsx.content_types import ensure_png_content_type
 from scripts.xlsx.relationships import build_sheet_relationships, build_vml_relationships
 from scripts.xlsx.sheet import (
     extract_base_anchor,
+    extract_base_ole_anchor,
     update_drawing,
     update_ole_objects,
     update_sheet_labels,
@@ -32,6 +33,7 @@ def _build_template_mode(
     cdx_paths: list[Path],
     output: Path,
     stream_name: str,
+    anchors=None,
 ) -> None:
     """Legacy path: inject CDX into a user-provided XLSX template."""
     register_namespaces()
@@ -59,7 +61,10 @@ def _build_template_mode(
         base_shape_id, from_row, to_row = extract_base_anchor(sheet_path)
 
         labels = [p.stem for p in cdx_paths]
-        update_sheet_labels(sheet_path, labels)
+        total_rows = None
+        if anchors:
+            total_rows = max(anchor.to_pt.row + 1 for anchor in anchors)
+        update_sheet_labels(sheet_path, labels, total_rows=total_rows)
         write_shared_strings(shared_strings_path, labels)
 
         ole_targets = []
@@ -104,9 +109,13 @@ def _build_template_mode(
         )
         vml_rids = build_vml_relationships(vml_rels_path, vml_image_targets)
 
-        update_ole_objects(sheet_path, base_shape_id, from_row, to_row, rel_pairs)
-        update_drawing(drawing_path, base_shape_id, from_row, to_row, len(cdx_paths))
-        update_vml(vml_path, base_shape_id, from_row, to_row, vml_rids)
+        update_ole_objects(
+            sheet_path, base_shape_id, from_row, to_row, rel_pairs, anchors=anchors
+        )
+        update_drawing(
+            drawing_path, base_shape_id, from_row, to_row, len(cdx_paths), anchors=anchors
+        )
+        update_vml(vml_path, base_shape_id, from_row, to_row, vml_rids, anchors=anchors)
         ensure_png_content_type(content_types_path)
 
         _pack_xlsx(tmpdir, output)
@@ -126,28 +135,23 @@ def _build_generate_mode(
     to_spec: str | None,
     row_height: float,
 ) -> None:
-    """Template-free path using the bundled Excel skeleton by default."""
-    labels = [p.stem for p in cdx_paths]
-    use_bundled_template = (
-        col == "B"
-        and start_row == 1
-        and margin_left == "12mm"
-        and margin_top == "5mm"
-        and width == "22mm"
-        and height == "25mm"
-        and from_spec is None
-        and to_spec is None
-        and row_height == 97.5
+    """Generate using bundled template, with optional custom anchors."""
+    bundled_template = Path(__file__).resolve().parents[2] / "template.xlsx"
+    bundled_template_sheet = (
+        Path(__file__).resolve().parents[2]
+        / "template"
+        / "xl"
+        / "worksheets"
+        / "sheet1.xml"
     )
-
-    if use_bundled_template:
-        bundled_template = Path(__file__).resolve().parents[2] / "template.xlsx"
-        _build_template_mode(bundled_template, cdx_paths, output, "CONTENTS")
-        return
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmpdir = Path(tmp)
-
+    if from_spec and not to_spec:
+        base_anchor = extract_base_ole_anchor(bundled_template_sheet)
+        anchors = translate_anchors(
+            len(cdx_paths),
+            base_anchor=base_anchor,
+            from_spec=from_spec,
+        )
+    else:
         anchors = compute_anchors(
             len(cdx_paths),
             col=col,
@@ -159,25 +163,7 @@ def _build_generate_mode(
             from_spec=from_spec,
             to_spec=to_spec,
         )
-
-        build_xlsx_skeleton(
-            tmpdir, labels, anchors, row_height=row_height,
-        )
-
-        ole_dir = tmpdir / "xl" / "embeddings"
-        media_dir = tmpdir / "xl" / "media"
-        ole_dir.mkdir(parents=True, exist_ok=True)
-        media_dir.mkdir(parents=True, exist_ok=True)
-
-        for idx, cdx_path in enumerate(cdx_paths, start=1):
-            cdx_data = cdx_path.read_bytes()
-            ole_bytes = build_chemdraw_ole(cdx_data)
-            (ole_dir / f"oleObject{idx}.bin").write_bytes(ole_bytes)
-
-            image_path = media_dir / f"image{idx}.png"
-            render_png(cdx_path, image_path)
-
-        _pack_xlsx(tmpdir, output)
+    _build_template_mode(bundled_template, cdx_paths, output, "CONTENTS", anchors=anchors)
 
 
 def _pack_xlsx(tmpdir: Path, output: Path) -> None:

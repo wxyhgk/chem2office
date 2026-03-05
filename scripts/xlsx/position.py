@@ -147,3 +147,36 @@ def compute_anchors(
             )
         )
     return anchors
+
+
+def translate_anchors(
+    count: int,
+    *,
+    base_anchor: OleAnchor,
+    from_spec: str,
+) -> list[OleAnchor]:
+    """Move anchors while preserving the original template size."""
+    base_from = base_anchor.from_pt
+    base_to = base_anchor.to_pt
+    delta_col = base_to.col - base_from.col
+    delta_col_off = base_to.col_off - base_from.col_off
+    delta_row = base_to.row - base_from.row
+    delta_row_off = base_to.row_off - base_from.row_off
+
+    new_from = parse_anchor_spec(from_spec)
+    anchors: list[OleAnchor] = []
+    for i in range(count):
+        from_pt = AnchorPoint(
+            col=new_from.col,
+            col_off=new_from.col_off,
+            row=new_from.row + i,
+            row_off=new_from.row_off,
+        )
+        to_pt = AnchorPoint(
+            col=new_from.col + delta_col,
+            col_off=new_from.col_off + delta_col_off,
+            row=new_from.row + i + delta_row,
+            row_off=new_from.row_off + delta_row_off,
+        )
+        anchors.append(OleAnchor(from_pt=from_pt, to_pt=to_pt))
+    return anchors

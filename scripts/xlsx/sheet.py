@@ -5,6 +5,7 @@ from pathlib import Path
 import uuid
 import xml.etree.ElementTree as ET
 
+from .position import AnchorPoint, OleAnchor
 from .namespaces import (
     NS,
     NS_MAIN,
@@ -35,14 +36,60 @@ def extract_base_anchor(sheet_path: Path) -> tuple[int, int, int]:
     return base_shape_id, from_row, to_row
 
 
-def update_sheet_labels(sheet_path: Path, labels: list[str]) -> None:
+def extract_base_ole_anchor(sheet_path: Path) -> OleAnchor:
+    tree = ET.parse(sheet_path)
+    root = tree.getroot()
+    base_alt = root.find("s:oleObjects/mc:AlternateContent", NS)
+    if base_alt is None:
+        raise SystemExit("base OLE object not found in sheet1.xml")
+    base_choice = base_alt.find("mc:Choice", NS)
+    if base_choice is None:
+        raise SystemExit("base OLE choice not found in sheet1.xml")
+    base_ole = base_choice.find("s:oleObject", NS)
+    if base_ole is None:
+        raise SystemExit("base OLE element not found in sheet1.xml")
+    anchor = base_ole.find("s:objectPr/s:anchor", NS)
+    if anchor is None:
+        raise SystemExit("base OLE anchor not found in sheet1.xml")
+
+    def read_corner(name: str) -> AnchorPoint:
+        corner = anchor.find(f"s:{name}", NS)
+        if corner is None:
+            raise SystemExit(f"anchor corner not found: {name}")
+        return AnchorPoint(
+            col=int(corner.find("xdr:col", NS).text),  # type: ignore[union-attr]
+            col_off=int(corner.find("xdr:colOff", NS).text),  # type: ignore[union-attr]
+            row=int(corner.find("xdr:row", NS).text),  # type: ignore[union-attr]
+            row_off=int(corner.find("xdr:rowOff", NS).text),  # type: ignore[union-attr]
+        )
+
+    return OleAnchor(from_pt=read_corner("from"), to_pt=read_corner("to"))
+
+
+def _set_anchor_corner(corner: ET.Element | None, *, col: int, col_off: int, row: int, row_off: int) -> None:
+    if corner is None:
+        return
+    mapping = {
+        "xdr:col": str(col),
+        "xdr:colOff": str(col_off),
+        "xdr:row": str(row),
+        "xdr:rowOff": str(row_off),
+    }
+    for tag, value in mapping.items():
+        el = corner.find(tag, NS)
+        if el is not None:
+            el.text = value
+
+
+def update_sheet_labels(sheet_path: Path, labels: list[str], total_rows: int | None = None) -> None:
     tree = ET.parse(sheet_path)
     root = tree.getroot()
     ensure_sheet_namespaces(root)
 
     dim = root.find("s:dimension", NS)
     if dim is not None:
-        dim.set("ref", f"A1:B{len(labels)}")
+        max_rows = max(total_rows or len(labels), len(labels))
+        dim.set("ref", f"A1:B{max_rows}")
 
     sheet_data = root.find("s:sheetData", NS)
     if sheet_data is None:
@@ -55,7 +102,8 @@ def update_sheet_labels(sheet_path: Path, labels: list[str]) -> None:
     for row in list(sheet_data):
         sheet_data.remove(row)
 
-    for idx, _label in enumerate(labels, start=1):
+    max_rows = max(total_rows or len(labels), len(labels))
+    for idx in range(1, max_rows + 1):
         row = copy.deepcopy(template_row)
         row.set("r", str(idx))
         if f"{{{NS_X14AC}}}dyDescent" in row.attrib:
@@ -64,12 +112,15 @@ def update_sheet_labels(sheet_path: Path, labels: list[str]) -> None:
         cell = row.find("s:c", NS)
         if cell is None:
             raise SystemExit("cell not found in template row")
-        cell.set("r", f"A{idx}")
-        cell.set("t", "s")
-        v = cell.find("s:v", NS)
-        if v is None:
-            v = ET.SubElement(cell, f"{{{NS_MAIN}}}v")
-        v.text = str(idx - 1)
+        if idx <= len(labels):
+            cell.set("r", f"A{idx}")
+            cell.set("t", "s")
+            v = cell.find("s:v", NS)
+            if v is None:
+                v = ET.SubElement(cell, f"{{{NS_MAIN}}}v")
+            v.text = str(idx - 1)
+        else:
+            row.remove(cell)
         sheet_data.append(row)
 
     tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
@@ -92,6 +143,7 @@ def update_ole_objects(
     from_row: int,
     to_row: int,
     rel_pairs: list[tuple[str, str]],
+    anchors: list[OleAnchor] | None = None,
 ) -> None:
     tree = ET.parse(sheet_path)
     root = tree.getroot()
@@ -111,6 +163,7 @@ def update_ole_objects(
         alt = copy.deepcopy(base_alt)
         shape_id = base_shape_id + (idx - 1)
         row_delta = idx - 1
+        custom_anchor = anchors[idx - 1] if anchors is not None else None
 
         choice = alt.find("mc:Choice", NS)
         if choice is not None:
@@ -125,14 +178,30 @@ def update_ole_objects(
                     if anchor is not None:
                         from_el = anchor.find("s:from", NS)
                         to_el = anchor.find("s:to", NS)
-                        if from_el is not None:
-                            row_el = from_el.find("xdr:row", NS)
-                            if row_el is not None:
-                                row_el.text = str(from_row + row_delta)
-                        if to_el is not None:
-                            row_el = to_el.find("xdr:row", NS)
-                            if row_el is not None:
-                                row_el.text = str(to_row + row_delta)
+                        if custom_anchor is None:
+                            if from_el is not None:
+                                row_el = from_el.find("xdr:row", NS)
+                                if row_el is not None:
+                                    row_el.text = str(from_row + row_delta)
+                            if to_el is not None:
+                                row_el = to_el.find("xdr:row", NS)
+                                if row_el is not None:
+                                    row_el.text = str(to_row + row_delta)
+                        else:
+                            _set_anchor_corner(
+                                from_el,
+                                col=custom_anchor.from_pt.col,
+                                col_off=custom_anchor.from_pt.col_off,
+                                row=custom_anchor.from_pt.row,
+                                row_off=custom_anchor.from_pt.row_off,
+                            )
+                            _set_anchor_corner(
+                                to_el,
+                                col=custom_anchor.to_pt.col,
+                                col_off=custom_anchor.to_pt.col_off,
+                                row=custom_anchor.to_pt.row,
+                                row_off=custom_anchor.to_pt.row_off,
+                            )
 
         fallback = alt.find("mc:Fallback", NS)
         if fallback is not None:
@@ -152,6 +221,7 @@ def update_drawing(
     from_row: int,
     to_row: int,
     count: int,
+    anchors: list[OleAnchor] | None = None,
 ) -> None:
     tree = ET.parse(drawing_path)
     root = tree.getroot()
@@ -172,17 +242,34 @@ def update_drawing(
         anchor = copy.deepcopy(base_anchor)
         shape_id = base_shape_id + (idx - 1)
         row_delta = idx - 1
+        custom_anchor = anchors[idx - 1] if anchors is not None else None
 
         from_el = anchor.find("xdr:from", NS)
         to_el = anchor.find("xdr:to", NS)
-        if from_el is not None:
-            row_el = from_el.find("xdr:row", NS)
-            if row_el is not None:
-                row_el.text = str(from_row + row_delta)
-        if to_el is not None:
-            row_el = to_el.find("xdr:row", NS)
-            if row_el is not None:
-                row_el.text = str(to_row + row_delta)
+        if custom_anchor is None:
+            if from_el is not None:
+                row_el = from_el.find("xdr:row", NS)
+                if row_el is not None:
+                    row_el.text = str(from_row + row_delta)
+            if to_el is not None:
+                row_el = to_el.find("xdr:row", NS)
+                if row_el is not None:
+                    row_el.text = str(to_row + row_delta)
+        else:
+            _set_anchor_corner(
+                from_el,
+                col=custom_anchor.from_pt.col,
+                col_off=custom_anchor.from_pt.col_off,
+                row=custom_anchor.from_pt.row,
+                row_off=custom_anchor.from_pt.row_off,
+            )
+            _set_anchor_corner(
+                to_el,
+                col=custom_anchor.to_pt.col,
+                col_off=custom_anchor.to_pt.col_off,
+                row=custom_anchor.to_pt.row,
+                row_off=custom_anchor.to_pt.row_off,
+            )
 
         c_nv_pr = anchor.find("xdr:sp/xdr:nvSpPr/xdr:cNvPr", NS)
         if c_nv_pr is not None:
@@ -206,6 +293,7 @@ def update_vml(
     from_row: int,
     to_row: int,
     vml_rids: list[str],
+    anchors: list[OleAnchor] | None = None,
 ) -> None:
     tree = ET.parse(vml_path)
     root = tree.getroot()
@@ -220,6 +308,7 @@ def update_vml(
         shape = copy.deepcopy(base_shape)
         shape_id = base_shape_id + (idx - 1)
         row_delta = idx - 1
+        custom_anchor = anchors[idx - 1] if anchors is not None else None
         shape.set("id", f"_x0000_s{shape_id}")
 
         imagedata = shape.find("v:imagedata", NS)
@@ -230,8 +319,19 @@ def update_vml(
         if anchor is not None and anchor.text:
             parts = [p.strip() for p in anchor.text.strip().split(",")]
             if len(parts) == 8:
-                parts[2] = str(from_row + row_delta)
-                parts[6] = str(to_row + row_delta)
+                if custom_anchor is None:
+                    parts[2] = str(from_row + row_delta)
+                    parts[6] = str(to_row + row_delta)
+                else:
+                    emu_per_px = 9525
+                    parts[0] = str(custom_anchor.from_pt.col)
+                    parts[1] = str(round(custom_anchor.from_pt.col_off / emu_per_px))
+                    parts[2] = str(custom_anchor.from_pt.row)
+                    parts[3] = str(round(custom_anchor.from_pt.row_off / emu_per_px))
+                    parts[4] = str(custom_anchor.to_pt.col)
+                    parts[5] = str(round(custom_anchor.to_pt.col_off / emu_per_px))
+                    parts[6] = str(custom_anchor.to_pt.row)
+                    parts[7] = str(round(custom_anchor.to_pt.row_off / emu_per_px))
                 anchor.text = ", ".join(parts)
 
         root.append(shape)
