@@ -1,15 +1,16 @@
 # ChemDraw OLE 注入（Excel）
 
-这个仓库实现了 ChemDraw 的 “OLE 模板注入” 流程，用一个 Windows 端制作的
-Excel 模板（包含 ChemDraw OLE 对象）作为母体，在 Linux/macOS 下替换 OLE
-里的 CDX 数据和预览图，从而批量生成可编辑的 ChemDraw OLE。
+这个仓库实现了 ChemDraw 的 “OLE 模板注入” 流程，在 Linux/macOS 下批量生成
+可编辑的 ChemDraw OLE。默认模式会直接复用仓库内置的 `template.xlsx`
+作为稳定骨架；如果显式传入 `--template`，则使用你指定的模板文件。
 
-## 为什么必须有模板
+## 为什么默认仍然依赖模板
 
 Excel 的 OLE 对象存储在微软 CFBF 容器里，ChemDraw 使用的是二进制 CDX 流。
-在 Linux/macOS 下从零创建合法的 OLE 非常困难，所以采用 “偷梁换柱”：
+虽然仓库里保留了“从零生成”的代码路径用于自定义定位，但默认输出为了兼容
+Excel，仍然采用模板注入方式：
 
-1) 先用 Windows Excel 插入 ChemDraw 对象，保存为模板。
+1) 用 Windows Excel 插入 ChemDraw 对象，保存模板。
 2) 替换 OLE 的 `CONTENTS` 流为新的 CDX。
 3) 更新预览图，让 Excel 显示正确结构。
 
@@ -21,7 +22,8 @@ Excel 的 OLE 对象存储在微软 CFBF 容器里，ChemDraw 使用的是二进
   - `scripts/ole/` - OLE 注入逻辑
   - `scripts/render/` - 预览图生成
   - `scripts/xlsx/` - XLSX 结构处理
-- `template.xlsx` - 单行模板（已包含一个 ChemDraw OLE 对象）。
+- `template.xlsx` - 默认使用的内置模板（单行、已包含一个 ChemDraw OLE 对象）。
+- `template/` - `template.xlsx` 解包后的静态参考文件。
 
 ## 依赖
 
@@ -31,22 +33,28 @@ Excel 的 OLE 对象存储在微软 CFBF 容器里，ChemDraw 使用的是二进
 
 ## 用法
 
-单个 CDX：
+推荐用法（默认，直接使用内置 `template.xlsx`）：
 
 ```bash
-python inject_cdx_into_xlsx.py --template template.xlsx --cdx san.cdx --output output.xlsx
+python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
 ```
 
-也可以直接运行拆分后的 CLI：
+也可以直接运行模块入口：
 
 ```bash
-python scripts/cli/inject_cdx_into_xlsx.py --template template.xlsx --cdx san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx san.cdx --output output.xlsx
 ```
 
-多行（每行一个 OLE）：
+显式指定模板：
 
 ```bash
-python inject_cdx_into_xlsx.py --template template.xlsx --cdx 1.cdx 2.cdx --output output_2rows.xlsx
+python3 inject_cdx_into_xlsx.py --template template.xlsx --cdx san.cdx --output output.xlsx
+```
+
+多行（每行一个 OLE，默认也走内置模板）：
+
+```bash
+python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 ```
 
 脚本会自动：
@@ -54,7 +62,7 @@ python inject_cdx_into_xlsx.py --template template.xlsx --cdx 1.cdx 2.cdx --outp
 - 在 B 列放入对应的 OLE 对象。
 - 用 Open Babel 生成预览 PNG 并绑定到对应 OLE。
 
-## 工作原理（简版）
+## 工作原理（默认路径）
 
 1) 解压 `.xlsx`（本质是 ZIP）。
 2) 对每个 CDX：
@@ -68,6 +76,12 @@ python inject_cdx_into_xlsx.py --template template.xlsx --cdx 1.cdx 2.cdx --outp
 4) 在 `sheet1.xml` 和 `vmlDrawing1.vml` 中复制/更新锚点。
 5) 重新打包为 `.xlsx`。
 
+说明：
+
+- 默认布局下，CLI 现在内部直接复用 `template.xlsx` 的稳定工作流。
+- 只有在显式传入定位参数（如 `--col`、`--from`、`--to`）时，才会走从零构造
+  XLSX 骨架的路径。
+
 ## 限制
 
 - CDX 大小必须 <= 模板中 OLE 的 `CONTENTS` 流长度（脚本会补零并修正长度）。
@@ -76,15 +90,20 @@ python inject_cdx_into_xlsx.py --template template.xlsx --cdx 1.cdx 2.cdx --outp
 
 ## 备注
 
-- 如果 Excel 报 XML 错误，通常是命名空间丢失或模板结构被破坏。
-  脚本已强制保留必要的命名空间声明。
+- 之前默认生成模式和模板模式不是同一路径，可能出现 Excel 打开后修复并删除
+  OLE 对象的情况。
+- 当前默认模式已经改为复用内置模板，以避免这类兼容性问题。
 
 ## 常见问题（FAQ）
 
 **1) Excel 提示 “被替换的部件：/xl/worksheets/sheet1.xml 有 XML 错误”**
 
-- 这是因为 `sheet1.xml` 里缺失了 `x14/xr/xr2/xr3` 命名空间声明。
-- 当前脚本已补齐这些 namespace；请使用最新脚本重新生成。
+- 旧版本默认生成模式和模板模式不一致，可能导致 Excel 删除对象记录。
+- 当前默认模式已经回到内置模板工作流；请直接使用：
+
+```bash
+python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
+```
 
 **2) OLE 对象显示了，但双击打不开**
 
@@ -94,7 +113,7 @@ python inject_cdx_into_xlsx.py --template template.xlsx --cdx 1.cdx 2.cdx --outp
 **3) 报错 “CDX is larger than existing stream”**
 
 - OLE 的 `CONTENTS` 流不能变长写入。
-- 解决方法：用更“大”的模板（OPE 中 CDX 内容更复杂时流更大），
+- 解决方法：用更“大”的模板（OLE 中 CDX 内容更复杂时流更大），
   或选择更小的 CDX。
 
 **4) 预览图没有更新**
