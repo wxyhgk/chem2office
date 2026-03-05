@@ -14,6 +14,28 @@ Excel，仍然采用模板注入方式：
 2) 替换 OLE 的 `CONTENTS` 流为新的 CDX。
 3) 更新预览图，让 Excel 显示正确结构。
 
+## 项目定位
+
+开源生态里，和这个问题相关的能力通常分成两层：
+
+1. 生成或转换 ChemDraw 数据
+   - 例如把分子、`SDF`、`CDXML` 转成二进制 `CDX`
+   - 这类能力常见于化学信息学工具链，例如 `pycdxml`、`OpenEye`
+
+2. 把 `CDX` 写成 Excel 里的可编辑 ChemDraw OLE 对象
+   - 这一步不仅要处理 `CDX`
+   - 还要处理 Excel 的 `xlsx` 结构、`oleObject*.bin`、预览图、
+     worksheet/drawing/VML 锚点、relationships、content types
+
+这个仓库主要解决的是第 2 层。
+
+也就是说：
+- `pycdxml` / `OpenEye` 更像是上游 `CDX` 生产器
+- 这个项目负责把已有的 `CDX` 落进 Excel，生成可编辑 OLE 对象
+
+这也是为什么这个仓库不只是“格式转换脚本”，而更接近一个面向 ChemDraw 的
+Excel OLE 生成器。
+
 ## 文件说明
 
 - `inject_cdx_into_xlsx.py` - 入口脚本（兼容旧用法，内部调用 `scripts/`）。
@@ -62,6 +84,127 @@ python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 - 在 B 列放入对应的 OLE 对象。
 - 用 Open Babel 生成预览 PNG 并绑定到对应 OLE。
 
+### 位置与尺寸控制
+
+`inject_cdx_into_xlsx.py` 支持两类定位方式：
+
+1. 简单定位
+   - `--col`
+   - `--start-row`
+   - `--margin-left`
+   - `--margin-top`
+   - `--width`
+   - `--height`
+
+2. 精确锚点
+   - `--from`
+   - `--to`
+
+锚点语法：
+
+```text
+A1
+A1+5mm,3mm
+B2+0pt,40pt
+```
+
+含义：
+- `A1` 表示左上角单元格。
+- `+5mm,3mm` 表示在该单元格内再偏移 `5mm` 和 `3mm`。
+- 支持单位：`mm`、`pt`、`in`、`emu`。
+
+### `--from` 和 `--to` 的行为
+
+这个规则很重要：
+
+- 只传 `--from`
+  - 只平移对象
+  - 保持模板原始长宽比和尺寸不变
+  - 适合“换位置，不想变形”
+
+- 同时传 `--from` 和 `--to`
+  - 重新定义对象显示框
+  - 宽高会按新的锚点框变化
+  - 适合明确指定对象跨哪些单元格
+
+例子：
+
+```bash
+# 只移动到 A1/A2 附近，保持原始尺寸
+python3 inject_cdx_into_xlsx.py \
+  --cdx sdfData/GDG906.cdx \
+  --from A1+2mm,45pt \
+  -o moved_only.xlsx
+```
+
+```bash
+# 强制定义一个新的显示框，会改变宽高
+python3 inject_cdx_into_xlsx.py \
+  --cdx sdfData/GDG906.cdx \
+  --from A1+5mm,20pt \
+  --to A2+20mm,10pt \
+  -o resized_box.xlsx
+```
+
+### 关于长宽比
+
+- OLE 对象本身并不会自动“聪明缩放”。
+- 如果你显式给了新的 `--from` 和 `--to`，程序会把这个矩形当成新的显示框。
+- 如果这个框比原始比例更高、更窄，视觉上就会出现“被拉长”或“被压扁”。
+- 如果只想改位置，优先只传 `--from`。
+
+### 方形双行布局脚本
+
+仓库另外提供了一个专门脚本，用于生成这种版式：
+
+```text
+OLE | 基态
+OLE | 激发态 s1
+```
+
+入口：
+
+```bash
+python3 make_state_pair_layout.py --cdx sdfData/GDG906.cdx -o state_pair.xlsx
+```
+
+默认行为：
+- `A` 列宽约 `180 px`
+- `A1`、`A2` 行高各约 `90 px`
+- 左侧 `A1 + A2` 组成约 `180 x 180 px` 的方形区域
+- OLE 放在这个方形区域中间
+- `B1=基态`
+- `B2=激发态 s1`
+
+可用参数：
+- `--top-label`
+- `--bottom-label`
+- `--a-column-pixels`
+- `--row-pixels`
+- `--fill-ratio`
+
+`--fill-ratio` 的规则：
+- 默认 `0.9`
+- 保持 OLE 原始长宽比
+- 先判断宽和高中哪一边先触到容器限制
+- 把受限边拉到容器的 `90%`
+- 另一边按比例缩放
+- 最终整体居中
+- 因为缩放取的是宽高限制中的较小值，所以不会溢出单元格
+
+例子：
+
+```bash
+python3 make_state_pair_layout.py \
+  --cdx sdfData/GDG906.cdx \
+  --top-label 基态 \
+  --bottom-label 激发态\ s1 \
+  --a-column-pixels 180 \
+  --row-pixels 90 \
+  --fill-ratio 0.9 \
+  -o sdfData/GDG906_state_pair_fit90.xlsx
+```
+
 ## 工作原理（默认路径）
 
 1) 解压 `.xlsx`（本质是 ZIP）。
@@ -81,8 +224,8 @@ python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 说明：
 
 - 默认布局下，CLI 现在内部直接复用 `template.xlsx` 的稳定工作流。
-- 只有在显式传入定位参数（如 `--col`、`--from`、`--to`）时，才会走从零构造
-  XLSX 骨架的路径。
+- 只有在显式传入定位参数（如 `--col`、`--start-row`、`--width`、`--height`、
+  `--from`、`--to`）时，才会走从零构造 XLSX 骨架的路径。
 
 ## 限制
 
@@ -128,7 +271,16 @@ python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
 - 检查 `xl/media/` 下是否生成了 `image*.png`。
 - 确认 `sheet1.xml.rels` 和 `vmlDrawing1.vml.rels` 里指向的是 PNG。
 
-**5) 手头只有 `.sdf` 或 `.cdxml`，没有 `.cdx`**
+**5) 对象位置对了，但看起来被拉长或压扁**
+
+- 这是显示框比例问题，不是 OLE 本身损坏。
+- 如果同时传了 `--from` 和 `--to`，对象会被放进你指定的新矩形里。
+- 新矩形越偏离原始比例，视觉变形越明显。
+- 如果只是改位置，优先只传 `--from`。
+- 如果需要自动保持比例并尽量填满方形区域，优先用
+  `make_state_pair_layout.py --fill-ratio 0.9`。
+
+**6) 手头只有 `.sdf` 或 `.cdxml`，没有 `.cdx`**
 
 - 当前机器上的 Open Babel 只能读取 `cdx`，不能写 `cdx`。
 - 一条可行路线是使用 `pycdxml` + `rdkit`：
