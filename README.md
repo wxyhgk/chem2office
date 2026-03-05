@@ -68,7 +68,9 @@ python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 2) 对每个 CDX：
    - 复制模板里的 OLE 文件（`xl/embeddings/oleObject*.bin`）。
    - 替换 `CONTENTS` 流为新的 CDX 数据。
-   - 修补 OLE 目录项的流长度（`olefile` 不支持变长写入）。
+   - 若新 CDX 仍能放进模板原有流，则直接覆盖并修补目录项长度。
+   - 若新 CDX 大于模板原有流，则重建合法的 ChemDraw OLE 容器，只替换
+     `oleObject*.bin`，其余 worksheet/drawing/VML 结构继续复用模板。
 3) 生成 PNG 预览图并更新关联关系：
    - `xl/media/image*.png`
    - `xl/worksheets/_rels/sheet1.xml.rels`
@@ -84,15 +86,18 @@ python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 
 ## 限制
 
-- CDX 大小必须 <= 模板中 OLE 的 `CONTENTS` 流长度（脚本会补零并修正长度）。
 - 模板必须由 Windows Excel + ChemDraw 插入生成。
 - 当前脚本假设模板结构类似 `template.xlsx`（简单一行一对象布局）。
+- 当前项目默认只接受二进制 `CDX` 作为注入输入；`CDXML` 不能直接替代
+  `--cdx` 参数。
 
 ## 备注
 
 - 之前默认生成模式和模板模式不是同一路径，可能出现 Excel 打开后修复并删除
   OLE 对象的情况。
 - 当前默认模式已经改为复用内置模板，以避免这类兼容性问题。
+- 对于大 `CDX`，之前的问题不在 worksheet XML，而在重建出来的 `oleObject.bin`
+  不够严格合法；修正 CFBF/FAT 常量后，Excel 不再删除对象记录。
 
 ## 常见问题（FAQ）
 
@@ -112,11 +117,22 @@ python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
 
 **3) 报错 “CDX is larger than existing stream”**
 
-- OLE 的 `CONTENTS` 流不能变长写入。
-- 解决方法：用更“大”的模板（OLE 中 CDX 内容更复杂时流更大），
-  或选择更小的 CDX。
+- 旧版本模板模式只会覆盖现有 `CONTENTS` 流，所以会报这个错误。
+- 当前版本在默认路径下会自动回退到“重建 OLE 容器”的方式处理大 `CDX`，
+  不需要手工换更大的模板。
+- 如果你显式传了 `--template` 且模板结构比较特殊，仍建议优先用仓库内置
+  的 `template.xlsx` 先验证。
 
 **4) 预览图没有更新**
 
 - 检查 `xl/media/` 下是否生成了 `image*.png`。
 - 确认 `sheet1.xml.rels` 和 `vmlDrawing1.vml.rels` 里指向的是 PNG。
+
+**5) 手头只有 `.sdf` 或 `.cdxml`，没有 `.cdx`**
+
+- 当前机器上的 Open Babel 只能读取 `cdx`，不能写 `cdx`。
+- 一条可行路线是使用 `pycdxml` + `rdkit`：
+  - `SDF -> RDKit molecule`
+  - `RDKit molecule -> binary CDX`
+  - 再把生成的 `CDX` 注入 Excel
+- `CDXML` 本身不能直接传给当前 CLI 的 `--cdx` 参数。

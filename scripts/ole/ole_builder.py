@@ -28,9 +28,10 @@ _SECTOR_SIZE = 512
 _MINI_SECTOR_SIZE = 64
 _MINI_STREAM_CUTOFF = 0x1000  # 4096 bytes – streams smaller go to mini stream
 
-_FREE = 0xFFFFFFFE
-_ENDOFCHAIN = 0xFFFFFFFD
-_FATSECT = 0xFFFFFFFC
+# CFBF special sector IDs per [MS-CFB].
+_FREE = 0xFFFFFFFF
+_ENDOFCHAIN = 0xFFFFFFFE
+_FATSECT = 0xFFFFFFFD
 _NOSTREAM = 0xFFFFFFFF
 
 
@@ -130,24 +131,29 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
     contents_data = cdx_data
 
     # ---- Decide storage strategy ----
-    # All three streams are small enough for the mini-stream in the
-    # typical case.  We keep a single strategy: pack everything into
-    # the mini-stream (Root Entry container).
-    streams = [
+    # Small streams live inside the root mini-stream, while larger
+    # CONTENTS payloads must use regular FAT sectors.
+    mini_stream_defs: list[tuple[str, bytes]] = []
+    regular_stream_defs: list[tuple[str, bytes]] = []
+    for name, data in [
         ("\x01Ole", ole_data),
         ("\x01CompObj", compobj_data),
         ("CONTENTS", contents_data),
-    ]
+    ]:
+        if len(data) < _MINI_STREAM_CUTOFF:
+            mini_stream_defs.append((name, data))
+        else:
+            regular_stream_defs.append((name, data))
 
-    # Build mini-stream: concatenate all stream data, each padded to
+    # Build mini-stream: concatenate small stream data, each padded to
     # a multiple of mini-sector size (64 bytes).
     mini_stream = bytearray()
-    mini_starts: list[int] = []      # start mini-sector for each stream
+    mini_starts: dict[str, int] = {}  # start mini-sector for each stream
     mini_chain: list[int] = []       # mini-FAT entries
 
-    for _name, sdata in streams:
+    for name, sdata in mini_stream_defs:
         start_mini_sec = len(mini_stream) // _MINI_SECTOR_SIZE
-        mini_starts.append(start_mini_sec)
+        mini_starts[name] = start_mini_sec
         padded = _pad(sdata, _MINI_SECTOR_SIZE)
         n_mini_secs = len(padded) // _MINI_SECTOR_SIZE
         for j in range(n_mini_secs):
@@ -162,13 +168,25 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
     mini_stream_padded = _pad(bytes(mini_stream), _SECTOR_SIZE)
     n_mini_stream_sectors = len(mini_stream_padded) // _SECTOR_SIZE
 
+    regular_stream_bytes: dict[str, bytes] = {}
+    regular_stream_sectors: dict[str, int] = {}
+    for name, sdata in regular_stream_defs:
+        regular_stream_bytes[name] = _pad(sdata, _SECTOR_SIZE)
+        regular_stream_sectors[name] = len(regular_stream_bytes[name]) // _SECTOR_SIZE
+
     # ---- Layout sectors ----
     # Sector 0: FAT sector
     # Sector 1: Directory sector (4 entries = 512 bytes, fits in 1 sector)
     # Sector 2: Mini-FAT sector
     # Sector 3 .. 3+N-1: Mini-stream data sectors
+    # Remaining sectors: regular FAT-backed streams (e.g. large CONTENTS)
     mini_stream_start = 3
-    total_sectors = 3 + n_mini_stream_sectors
+    next_sector = mini_stream_start + n_mini_stream_sectors
+    regular_starts: dict[str, int] = {}
+    for name, _sdata in regular_stream_defs:
+        regular_starts[name] = next_sector
+        next_sector += regular_stream_sectors[name]
+    total_sectors = next_sector
 
     # ---- Build FAT ----
     fat = [0] * max(128, total_sectors)  # one FAT sector = 128 entries
@@ -178,6 +196,12 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
     for i in range(n_mini_stream_sectors):
         s = mini_stream_start + i
         fat[s] = s + 1 if i < n_mini_stream_sectors - 1 else _ENDOFCHAIN
+    for name, _sdata in regular_stream_defs:
+        start = regular_starts[name]
+        count = regular_stream_sectors[name]
+        for i in range(count):
+            s = start + i
+            fat[s] = s + 1 if i < count - 1 else _ENDOFCHAIN
     # Mark rest as free.
     for i in range(total_sectors, 128):
         fat[i] = _FREE
@@ -210,7 +234,7 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
         "\x01Ole", entry_type=2, color=0,
         left=_NOSTREAM, right=_NOSTREAM, child=_NOSTREAM,
         clsid=_ZERO_CLSID,
-        start=mini_starts[0], size=len(ole_data),
+        start=mini_starts["\x01Ole"], size=len(ole_data),
     )
 
     # DE[2]: \x01CompObj – subtree root, left=Ole, right=CONTENTS
@@ -218,15 +242,20 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
         "\x01CompObj", entry_type=2, color=1,
         left=1, right=3, child=_NOSTREAM,
         clsid=_ZERO_CLSID,
-        start=mini_starts[1], size=len(compobj_data),
+        start=mini_starts["\x01CompObj"], size=len(compobj_data),
     )
 
     # DE[3]: CONTENTS
+    contents_start = (
+        mini_starts["CONTENTS"]
+        if "CONTENTS" in mini_starts
+        else regular_starts["CONTENTS"]
+    )
     dir_sector += _make_dir_entry(
         "CONTENTS", entry_type=2, color=0,
         left=_NOSTREAM, right=_NOSTREAM, child=_NOSTREAM,
         clsid=_ZERO_CLSID,
-        start=mini_starts[2], size=len(contents_data),
+        start=contents_start, size=len(contents_data),
     )
 
     dir_sector = _pad(bytes(dir_sector), _SECTOR_SIZE)
@@ -274,5 +303,7 @@ def build_chemdraw_ole(cdx_data: bytes) -> bytes:
     out.write(bytes(dir_sector))      # sector 1: directory
     out.write(bytes(mini_fat))        # sector 2: mini-FAT
     out.write(mini_stream_padded)     # sector 3+: mini-stream data
+    for name, _sdata in regular_stream_defs:
+        out.write(regular_stream_bytes[name])
 
     return out.getvalue()

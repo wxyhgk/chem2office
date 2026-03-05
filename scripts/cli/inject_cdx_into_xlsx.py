@@ -75,8 +75,16 @@ def _build_template_mode(
                 ole_path.write_bytes(base_ole_bytes)
 
             cdx_data = cdx_path.read_bytes()
-            inject_cdx_stream(ole_path, stream_name, cdx_data)
-            patch_direntry_size(ole_path, stream_name, len(cdx_data))
+            try:
+                inject_cdx_stream(ole_path, stream_name, cdx_data)
+                patch_direntry_size(ole_path, stream_name, len(cdx_data))
+            except SystemExit as exc:
+                if "CDX is larger than existing stream" not in str(exc):
+                    raise
+                # Keep the stable template XML/VML path, but swap in a
+                # freshly built OLE container that can hold a large
+                # CONTENTS stream.
+                ole_path.write_bytes(build_chemdraw_ole(cdx_data))
 
             image_name = f"image{idx}.png"
             image_path = tmpdir / "xl" / "media" / image_name
