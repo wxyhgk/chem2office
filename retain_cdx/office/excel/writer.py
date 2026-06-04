@@ -188,6 +188,10 @@ class ExcelCDXWriter:
                     height_px=height_px if _shell_allow_resize(shell) and display is not None else None,
                     preserve_aspect=_shell_preserve_aspect(shell),
                     fit_cdx=_shell_fit_cdx(shell),
+                    preview_width=preview_width,
+                    preview_height=preview_height,
+                    preview_thick_lines=preview_thick_lines,
+                    preview_no_margin=preview_no_margin,
                 )
             else:
                 build_source_ole_workbook(

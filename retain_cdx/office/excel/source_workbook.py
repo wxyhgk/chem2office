@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 
 from retain_cdx.ole.embed import write_cdx_to_ole
+from retain_cdx.render.preview import render_png
 
 from .units import EMU_PER_PIXEL, POINTS_PER_PIXEL
 from .package import extract_xlsx, pack_xlsx
@@ -65,6 +67,10 @@ def build_source_workbook_from_shell(
     height_px: int | None = None,
     preserve_aspect: bool = True,
     fit_cdx: bool = False,
+    preview_width: int | None = None,
+    preview_height: int | None = None,
+    preview_thick_lines: bool = False,
+    preview_no_margin: bool = True,
 ) -> None:
     """Build a one-object source workbook by reusing a native OLE shell."""
     import tempfile
@@ -81,6 +87,14 @@ def build_source_workbook_from_shell(
         if fit_cdx:
             cdx_path = _fit_cdx_to_shell(cdx_path, package_dir)
         write_cdx_to_ole(embeddings[0], cdx_path, stream_name="CONTENTS")
+        _replace_shell_preview(
+            cdx_path,
+            package_dir,
+            width=preview_width,
+            height=preview_height,
+            thick_lines=preview_thick_lines,
+            no_margin=preview_no_margin,
+        )
         if start_col is not None and start_row is not None:
             _patch_shell_geometry(
                 package_dir,
@@ -93,6 +107,80 @@ def build_source_workbook_from_shell(
                 preserve_aspect=preserve_aspect,
             )
         pack_xlsx(package_dir, output)
+
+
+def _replace_shell_preview(
+    cdx_path: Path,
+    package_dir: Path,
+    *,
+    width: int | None,
+    height: int | None,
+    thick_lines: bool,
+    no_margin: bool,
+) -> None:
+    vml_rels_path = package_dir / "xl" / "drawings" / "_rels" / "vmlDrawing1.vml.rels"
+    if not vml_rels_path.exists():
+        return
+
+    image_rel = _find_vml_image_relationship(vml_rels_path)
+    if image_rel is None:
+        return
+
+    rel_id, old_target = image_rel
+    media_dir = package_dir / "xl" / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    old_name = Path(old_target).name or "image1.emf"
+    new_name = f"{Path(old_name).stem}.png"
+    png_path = media_dir / new_name
+    shell_width_px, shell_height_px = _read_vml_size_px(
+        (package_dir / "xl" / "drawings" / "vmlDrawing1.vml").read_text(encoding="utf-8")
+    )
+    render_png(
+        cdx_path,
+        png_path,
+        width=width,
+        height=height,
+        thick_lines=thick_lines,
+        no_margin=no_margin,
+        crop=True,
+        crop_padding=2,
+        target_aspect=shell_width_px / shell_height_px,
+    )
+    new_target = f"../media/{new_name}"
+    _set_image_relationship(vml_rels_path, rel_id, new_target)
+    _set_sheet_image_relationships(
+        package_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels",
+        new_target,
+    )
+
+
+def _find_vml_image_relationship(rels_path: Path) -> tuple[str, str] | None:
+    root = ET.parse(rels_path).getroot()
+    for rel in root:
+        if rel.get("Type", "").endswith("/image"):
+            return rel.get("Id", ""), rel.get("Target", "")
+    return None
+
+
+def _set_image_relationship(rels_path: Path, rel_id: str, target: str) -> None:
+    tree = ET.parse(rels_path)
+    root = tree.getroot()
+    for rel in root:
+        if rel.get("Id") == rel_id:
+            rel.set("Target", target)
+            break
+    tree.write(rels_path, encoding="UTF-8", xml_declaration=True)
+
+
+def _set_sheet_image_relationships(rels_path: Path, target: str) -> None:
+    if not rels_path.exists():
+        return
+    tree = ET.parse(rels_path)
+    root = tree.getroot()
+    for rel in root:
+        if rel.get("Type", "").endswith("/image"):
+            rel.set("Target", target)
+    tree.write(rels_path, encoding="UTF-8", xml_declaration=True)
 
 
 def _fit_cdx_to_shell(cdx_path: Path, package_dir: Path) -> Path:

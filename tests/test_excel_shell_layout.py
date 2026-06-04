@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+import zipfile
 import xml.etree.ElementTree as ET
 
 from retain_cdx import ExcelCDXWriter, ShellTemplate
 from retain_cdx.office.excel.package import extract_xlsx, pack_xlsx
+from PIL import Image
 
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -58,3 +61,33 @@ def test_shell_insert_preserves_existing_sheet_cells(tmp_path: Path) -> None:
 
 def test_shell_template_does_not_fit_cdx_by_default() -> None:
     assert ShellTemplate(Path("tests/fixtures/shell_large.xlsx")).fit_cdx is False
+
+
+def test_shell_preview_matches_shell_display_aspect(tmp_path: Path) -> None:
+    output = tmp_path / "output.xlsx"
+    shell = Path("tests/fixtures/shell_large.xlsx")
+    with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+        writer.insert_cdx(
+            Path("tests/fixtures/test.cdx"),
+            sheet="Sheet1",
+            cell="A1",
+            shell=ShellTemplate(shell),
+            preview_width=700,
+            preview_height=700,
+            preview_no_margin=True,
+        )
+        writer.save(output)
+
+    with zipfile.ZipFile(shell) as z:
+        vml = z.read("xl/drawings/vmlDrawing1.vml").decode("utf-8")
+    match = re.search(r"width:([0-9.]+)pt;.*?height:([0-9.]+)pt", vml, re.S)
+    assert match is not None
+    shell_aspect = float(match.group(1)) / float(match.group(2))
+
+    with zipfile.ZipFile(output) as z:
+        preview = tmp_path / "preview.png"
+        preview.write_bytes(z.read("xl/media/sheet1_retain_image1.png"))
+    with Image.open(preview) as image:
+        preview_aspect = image.width / image.height
+
+    assert abs(preview_aspect - shell_aspect) < 0.01

@@ -50,6 +50,7 @@ def merge_source_workbook(
         ),
     ]
     vml_rels: list[tuple[str, str, str]] = []
+    copied_media: set[str] = set()
 
     source_rels = ET.parse(
         source_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels"
@@ -68,9 +69,7 @@ def merge_source_workbook(
         elif rtype.endswith("/image"):
             name = Path(target).name
             new_name = f"{prefix}_{name}"
-            (target_dir / "xl" / "media" / new_name).write_bytes(
-                (source_dir / "xl" / "media" / name).read_bytes()
-            )
+            _copy_media(source_dir, target_dir, name, new_name, copied_media)
             rels.append((rid, rtype, f"../media/{new_name}"))
 
     source_vml_rels = ET.parse(
@@ -79,8 +78,10 @@ def merge_source_workbook(
     for rel in source_vml_rels.findall(f"{{{REL_NS}}}Relationship"):
         target = rel.get("Target", "")
         name = Path(target).name
+        new_name = f"{prefix}_{name}"
+        _copy_media(source_dir, target_dir, name, new_name, copied_media)
         vml_rels.append(
-            (rel.get("Id", ""), rel.get("Type", ""), f"../media/{prefix}_{name}")
+            (rel.get("Id", ""), rel.get("Type", ""), f"../media/{new_name}")
         )
 
     sheet_rels_path = target_dir / "xl" / "worksheets" / "_rels" / f"sheet{sheet_idx}.xml.rels"
@@ -113,3 +114,18 @@ def merge_source_workbook(
 def _normalize_object_pr(ole_objects: ET.Element) -> None:
     for object_pr in ole_objects.findall(".//s:objectPr", {"s": NS_MAIN}):
         object_pr.attrib.pop("autoPict", None)
+
+
+def _copy_media(
+    source_dir: Path,
+    target_dir: Path,
+    source_name: str,
+    target_name: str,
+    copied: set[str],
+) -> None:
+    if not source_name or target_name in copied:
+        return
+    (target_dir / "xl" / "media" / target_name).write_bytes(
+        (source_dir / "xl" / "media" / source_name).read_bytes()
+    )
+    copied.add(target_name)
