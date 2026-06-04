@@ -2,17 +2,14 @@
 from __future__ import annotations
 
 import argparse
-import os
 import tempfile
-import zipfile
 from pathlib import Path
 
-from scripts.ole.inject import inject_cdx_stream, patch_direntry_size
-from scripts.ole.ole_builder import build_chemdraw_ole
+from scripts.ole.embed import write_cdx_to_ole
 from scripts.render.preview import render_png
 from scripts.xlsx.namespaces import register_namespaces
 from scripts.xlsx.position import compute_anchors, translate_anchors
-from scripts.xlsx.xlsx_builder import build_xlsx_skeleton
+from scripts.xlsx.package import extract_xlsx, pack_xlsx
 
 # -- legacy template-mode imports (only used when --template is given) --
 from scripts.xlsx.content_types import ensure_png_content_type
@@ -22,6 +19,7 @@ from scripts.xlsx.sheet import (
     extract_base_ole_anchor,
     update_drawing,
     update_ole_objects,
+    update_row_heights,
     update_sheet_labels,
     update_vml,
     write_shared_strings,
@@ -34,14 +32,19 @@ def _build_template_mode(
     output: Path,
     stream_name: str,
     anchors=None,
+    row_height: float = 97.5,
+    preview_width: int | None = None,
+    preview_height: int | None = None,
+    preview_size: int | None = None,
+    preview_thick_lines: bool = False,
+    preview_no_margin: bool = False,
 ) -> None:
     """Legacy path: inject CDX into a user-provided XLSX template."""
     register_namespaces()
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
-        with zipfile.ZipFile(template, "r") as z:
-            z.extractall(tmpdir)
+        extract_xlsx(template, tmpdir)
 
         ole_dir = tmpdir / "xl" / "embeddings"
         ole_dir.mkdir(parents=True, exist_ok=True)
@@ -65,6 +68,7 @@ def _build_template_mode(
         if anchors:
             total_rows = max(anchor.to_pt.row + 1 for anchor in anchors)
         update_sheet_labels(sheet_path, labels, total_rows=total_rows)
+        update_row_heights(sheet_path, row_height, total_rows or len(labels))
         write_shared_strings(shared_strings_path, labels)
 
         ole_targets = []
@@ -79,22 +83,20 @@ def _build_template_mode(
             else:
                 ole_path.write_bytes(base_ole_bytes)
 
-            cdx_data = cdx_path.read_bytes()
-            try:
-                inject_cdx_stream(ole_path, stream_name, cdx_data)
-                patch_direntry_size(ole_path, stream_name, len(cdx_data))
-            except SystemExit as exc:
-                if "CDX is larger than existing stream" not in str(exc):
-                    raise
-                # Keep the stable template XML/VML path, but swap in a
-                # freshly built OLE container that can hold a large
-                # CONTENTS stream.
-                ole_path.write_bytes(build_chemdraw_ole(cdx_data))
+            write_cdx_to_ole(ole_path, cdx_path, stream_name=stream_name)
 
             image_name = f"image{idx}.png"
             image_path = tmpdir / "xl" / "media" / image_name
             image_path.parent.mkdir(parents=True, exist_ok=True)
-            render_png(cdx_path, image_path)
+            render_png(
+                cdx_path,
+                image_path,
+                width=preview_width,
+                height=preview_height,
+                image_size=preview_size,
+                thick_lines=preview_thick_lines,
+                no_margin=preview_no_margin,
+            )
 
             ole_targets.append(f"../embeddings/oleObject{idx}.bin")
             image_targets.append(f"../media/{image_name}")
@@ -115,10 +117,18 @@ def _build_template_mode(
         update_drawing(
             drawing_path, base_shape_id, from_row, to_row, len(cdx_paths), anchors=anchors
         )
-        update_vml(vml_path, base_shape_id, from_row, to_row, vml_rids, anchors=anchors)
+        update_vml(
+            vml_path,
+            base_shape_id,
+            from_row,
+            to_row,
+            vml_rids,
+            anchors=anchors,
+            row_height=row_height,
+        )
         ensure_png_content_type(content_types_path)
 
-        _pack_xlsx(tmpdir, output)
+        pack_xlsx(tmpdir, output)
 
 
 def _build_generate_mode(
@@ -134,6 +144,11 @@ def _build_generate_mode(
     from_spec: str | None,
     to_spec: str | None,
     row_height: float,
+    preview_width: int | None = None,
+    preview_height: int | None = None,
+    preview_size: int | None = None,
+    preview_thick_lines: bool = False,
+    preview_no_margin: bool = False,
 ) -> None:
     """Generate using bundled template, with optional custom anchors."""
     bundled_template = Path(__file__).resolve().parents[2] / "template.xlsx"
@@ -163,19 +178,19 @@ def _build_generate_mode(
             from_spec=from_spec,
             to_spec=to_spec,
         )
-    _build_template_mode(bundled_template, cdx_paths, output, "CONTENTS", anchors=anchors)
-
-
-def _pack_xlsx(tmpdir: Path, output: Path) -> None:
-    """Pack *tmpdir* contents into an XLSX (ZIP) file."""
-    if output.exists():
-        output.unlink()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for root, _, files in os.walk(tmpdir):
-            for name in files:
-                full_path = Path(root) / name
-                rel_path = full_path.relative_to(tmpdir)
-                z.write(full_path, rel_path)
+    _build_template_mode(
+        bundled_template,
+        cdx_paths,
+        output,
+        "CONTENTS",
+        anchors=anchors,
+        row_height=row_height,
+        preview_width=preview_width,
+        preview_height=preview_height,
+        preview_size=preview_size,
+        preview_thick_lines=preview_thick_lines,
+        preview_no_margin=preview_no_margin,
+    )
 
 
 def main() -> None:

@@ -126,6 +126,28 @@ def update_sheet_labels(sheet_path: Path, labels: list[str], total_rows: int | N
     tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
 
 
+def update_row_heights(sheet_path: Path, row_height: float, total_rows: int) -> None:
+    tree = ET.parse(sheet_path)
+    root = tree.getroot()
+    ensure_sheet_namespaces(root)
+
+    sheet_format = root.find("s:sheetFormatPr", NS)
+    if sheet_format is not None:
+        sheet_format.set("defaultRowHeight", str(row_height))
+        sheet_format.set("customHeight", "1")
+
+    sheet_data = root.find("s:sheetData", NS)
+    if sheet_data is None:
+        raise SystemExit("sheetData not found")
+    for idx in range(1, total_rows + 1):
+        row = sheet_data.find(f"s:row[@r='{idx}']", NS)
+        if row is not None:
+            row.set("ht", str(row_height))
+            row.set("customHeight", "1")
+
+    tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
+
+
 def write_shared_strings(path: Path, labels: list[str]) -> None:
     root = ET.Element(
         f"{{{NS_MAIN}}}sst", count=str(len(labels)), uniqueCount=str(len(labels))
@@ -279,7 +301,7 @@ def update_drawing(
             if ext is not None:
                 ext.set("spid", f"_x0000_s{shape_id}")
             creation = c_nv_pr.find("a:extLst/a:ext/a16:creationId", NS)
-            if creation is not None and idx > 1:
+            if creation is not None:
                 creation.set("id", f"{{{str(uuid.uuid4()).upper()}}}")
 
         choice.append(anchor)
@@ -294,6 +316,7 @@ def update_vml(
     to_row: int,
     vml_rids: list[str],
     anchors: list[OleAnchor] | None = None,
+    row_height: float = 97.5,
 ) -> None:
     tree = ET.parse(vml_path)
     root = tree.getroot()
@@ -323,17 +346,101 @@ def update_vml(
                     parts[2] = str(from_row + row_delta)
                     parts[6] = str(to_row + row_delta)
                 else:
-                    emu_per_px = 9525
-                    parts[0] = str(custom_anchor.from_pt.col)
-                    parts[1] = str(round(custom_anchor.from_pt.col_off / emu_per_px))
-                    parts[2] = str(custom_anchor.from_pt.row)
-                    parts[3] = str(round(custom_anchor.from_pt.row_off / emu_per_px))
-                    parts[4] = str(custom_anchor.to_pt.col)
-                    parts[5] = str(round(custom_anchor.to_pt.col_off / emu_per_px))
-                    parts[6] = str(custom_anchor.to_pt.row)
-                    parts[7] = str(round(custom_anchor.to_pt.row_off / emu_per_px))
+                    from_col, from_col_off = _vml_col_anchor(
+                        custom_anchor.from_pt.col, custom_anchor.from_pt.col_off
+                    )
+                    from_row, from_row_off = _vml_row_anchor(
+                        custom_anchor.from_pt.row,
+                        custom_anchor.from_pt.row_off,
+                        row_height=row_height,
+                    )
+                    to_col, to_col_off = _vml_col_anchor(
+                        custom_anchor.to_pt.col, custom_anchor.to_pt.col_off
+                    )
+                    to_row, to_row_off = _vml_row_anchor(
+                        custom_anchor.to_pt.row,
+                        custom_anchor.to_pt.row_off,
+                        row_height=row_height,
+                    )
+                    parts[0] = str(from_col)
+                    parts[1] = str(from_col_off)
+                    parts[2] = str(from_row)
+                    parts[3] = str(from_row_off)
+                    parts[4] = str(to_col)
+                    parts[5] = str(to_col_off)
+                    parts[6] = str(to_row)
+                    parts[7] = str(to_row_off)
                 anchor.text = ", ".join(parts)
+
+        if custom_anchor is not None:
+            _sync_vml_style(shape, custom_anchor, z_index=idx, row_height=row_height)
 
         root.append(shape)
 
     tree.write(vml_path, encoding="UTF-8", xml_declaration=True)
+
+
+def _vml_col_anchor(col: int, col_off_emu: int) -> tuple[int, int]:
+    return col, round(col_off_emu / 9525)
+
+
+def _vml_row_anchor(row: int, row_off_emu: int, *, row_height: float) -> tuple[int, int]:
+    return row, round(row_off_emu / 9525)
+
+
+def _sync_vml_style(
+    shape: ET.Element,
+    anchor: OleAnchor,
+    *,
+    z_index: int,
+    row_height: float,
+) -> None:
+    left, top, width, height = _vml_box_px(anchor, row_height)
+    style = shape.get("style", "")
+    wrap = "mso-wrap-style:tight" if "mso-wrap-style:tight" in style else ""
+    declarations = [
+        "position:absolute",
+        f"margin-left:{_px_to_pt(left):g}pt",
+        f"margin-top:{_px_to_pt(top):g}pt",
+        f"width:{_px_to_pt(width):g}pt",
+        f"height:{_px_to_pt(height):g}pt",
+        f"z-index:{z_index}",
+    ]
+    if wrap:
+        declarations.append(wrap)
+    shape.set("style", ";".join(declarations))
+    shape.set("stroked", "t")
+
+
+def _px_to_pt(px: float) -> float:
+    return px * 0.75
+
+
+def _excel_col_width_to_px(width: float) -> int:
+    return int(width * 7 + 5)
+
+
+def _col_width_px(col: int) -> int:
+    if col == 1:
+        return _excel_col_width_to_px(21.375)
+    return 64
+
+
+def _row_height_px(row_height: float) -> float:
+    return row_height / 0.75
+
+
+def _absolute_x_px(col: int, col_off_emu: int) -> float:
+    return sum(_col_width_px(i) for i in range(col)) + col_off_emu / 9525
+
+
+def _absolute_y_px(row: int, row_off_emu: int, row_height: float) -> float:
+    return row * _row_height_px(row_height) + row_off_emu / 9525
+
+
+def _vml_box_px(anchor: OleAnchor, row_height: float) -> tuple[float, float, float, float]:
+    left = _absolute_x_px(anchor.from_pt.col, anchor.from_pt.col_off)
+    top = _absolute_y_px(anchor.from_pt.row, anchor.from_pt.row_off, row_height)
+    right = _absolute_x_px(anchor.to_pt.col, anchor.to_pt.col_off)
+    bottom = _absolute_y_px(anchor.to_pt.row, anchor.to_pt.row_off, row_height)
+    return left, top, max(1, right - left), max(1, bottom - top)

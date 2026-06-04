@@ -3,17 +3,15 @@ from __future__ import annotations
 
 import argparse
 import copy
-import os
 import tempfile
-import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from scripts.ole.inject import inject_cdx_stream, patch_direntry_size
-from scripts.ole.ole_builder import build_chemdraw_ole
+from scripts.ole.embed import write_cdx_to_ole
 from scripts.render.preview import render_png
 from scripts.xlsx.content_types import ensure_png_content_type
 from scripts.xlsx.namespaces import NS, NS_MAIN, NS_X14AC, ensure_sheet_namespaces, register_namespaces
+from scripts.xlsx.package import extract_xlsx, pack_xlsx
 from scripts.xlsx.relationships import build_sheet_relationships, build_vml_relationships
 from scripts.xlsx.sheet import (
     extract_base_anchor,
@@ -189,17 +187,6 @@ def _write_two_row_labels(
     tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
 
 
-def _pack_xlsx(tmpdir: Path, output: Path) -> None:
-    if output.exists():
-        output.unlink()
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for root, _, files in os.walk(tmpdir):
-            for name in files:
-                full_path = Path(root) / name
-                rel_path = full_path.relative_to(tmpdir)
-                z.write(full_path, rel_path)
-
-
 def build_state_pair_layout(
     cdx_path: Path,
     output: Path,
@@ -215,8 +202,7 @@ def build_state_pair_layout(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
-        with zipfile.ZipFile(template, "r") as z:
-            z.extractall(tmpdir)
+        extract_xlsx(template, tmpdir)
 
         ole_dir = tmpdir / "xl" / "embeddings"
         ole_dir.mkdir(parents=True, exist_ok=True)
@@ -253,14 +239,7 @@ def build_state_pair_layout(
         )
         write_shared_strings(shared_strings_path, [top_label, bottom_label])
 
-        cdx_data = cdx_path.read_bytes()
-        try:
-            inject_cdx_stream(ole_path, "CONTENTS", cdx_data)
-            patch_direntry_size(ole_path, "CONTENTS", len(cdx_data))
-        except SystemExit as exc:
-            if "CDX is larger than existing stream" not in str(exc):
-                raise
-            ole_path.write_bytes(build_chemdraw_ole(cdx_data))
+        write_cdx_to_ole(ole_path, cdx_path)
 
         image_path = tmpdir / "xl" / "media" / "image1.png"
         image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,7 +265,7 @@ def build_state_pair_layout(
         update_vml(vml_path, base_shape_id, from_row, to_row, vml_rids, anchors=anchors)
         ensure_png_content_type(content_types_path)
 
-        _pack_xlsx(tmpdir, output)
+        pack_xlsx(tmpdir, output)
 
 
 def main() -> None:

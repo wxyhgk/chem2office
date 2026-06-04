@@ -345,6 +345,8 @@ def _write_vml(
     anchors: list[OleAnchor],
     base_shape_id: int,
     vml_rids: list[str],
+    *,
+    row_height: float,
 ) -> None:
     """Generate vmlDrawing1.vml."""
     NS_V = "urn:schemas-microsoft-com:vml"
@@ -405,16 +407,23 @@ def _write_vml(
     # shapes
     for idx, (anchor, rid) in enumerate(zip(anchors, vml_rids)):
         shape_id = base_shape_id + idx
+        left_px, top_px, width_px, height_px = _vml_box_px(anchor, row_height)
         shape = ET.SubElement(root, f"{{{NS_V}}}shape")
         shape.set("id", f"_x0000_s{shape_id}")
         shape.set("type", "#_x0000_t75")
-        shape.set("style",
-                   "position:absolute;"
-                   "margin-left:88.5pt;margin-top:13.5pt;"
-                   "width:62.25pt;height:70.5pt;z-index:1;"
-                   "mso-wrap-style:tight")
+        shape.set(
+            "style",
+            "position:absolute;"
+            f"margin-left:{_px_to_pt(left_px):g}pt;"
+            f"margin-top:{_px_to_pt(top_px):g}pt;"
+            f"width:{_px_to_pt(width_px):g}pt;"
+            f"height:{_px_to_pt(height_px):g}pt;"
+            f"z-index:{idx + 1};"
+            "mso-wrap-style:tight",
+        )
         shape.set("filled", "t")
         shape.set("fillcolor", "window [65]")
+        shape.set("stroked", "t")
         shape.set("strokecolor", "windowText [64]")
         shape.set(f"{{{NS_O}}}insetmode", "auto")
 
@@ -448,6 +457,43 @@ def _write_vml(
         ET.SubElement(cd, f"{{{NS_X}}}CF").text = "Pict"
 
     _write_xml(path, root)
+
+
+def _px_to_pt(px: float) -> float:
+    return px * 0.75
+
+
+def _excel_col_width_to_px(width: float) -> int:
+    # Excel's documented-ish display conversion for widths at Calibri 11.
+    return int(width * 7 + 5)
+
+
+def _col_width_px(col: int) -> int:
+    # _write_sheet gives Excel column B a custom width; other columns keep the
+    # normal default width.
+    if col == 1:
+        return _excel_col_width_to_px(21.375)
+    return 64
+
+
+def _row_height_px(row_height_pt: float) -> float:
+    return row_height_pt / 0.75
+
+
+def _absolute_x_px(col: int, col_off_emu: int) -> float:
+    return sum(_col_width_px(i) for i in range(col)) + col_off_emu / 9525
+
+
+def _absolute_y_px(row: int, row_off_emu: int, row_height_pt: float) -> float:
+    return row * _row_height_px(row_height_pt) + row_off_emu / 9525
+
+
+def _vml_box_px(anchor: OleAnchor, row_height_pt: float) -> tuple[float, float, float, float]:
+    left = _absolute_x_px(anchor.from_pt.col, anchor.from_pt.col_off)
+    top = _absolute_y_px(anchor.from_pt.row, anchor.from_pt.row_off, row_height_pt)
+    right = _absolute_x_px(anchor.to_pt.col, anchor.to_pt.col_off)
+    bottom = _absolute_y_px(anchor.to_pt.row, anchor.to_pt.row_off, row_height_pt)
+    return left, top, max(1, right - left), max(1, bottom - top)
 
 
 def _write_vml_rels(path: Path, image_targets: list[str]) -> list[str]:
@@ -539,7 +585,7 @@ def build_xlsx_skeleton(
 
     _write_vml(
         tmpdir / "xl" / "drawings" / "vmlDrawing1.vml",
-        anchors, base_shape_id, vml_rids,
+        anchors, base_shape_id, vml_rids, row_height=row_height,
     )
 
     return ole_rids, vml_rids
