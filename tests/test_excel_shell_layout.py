@@ -6,7 +6,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from retain_cdx import ExcelCDXWriter, ShellTemplate
-from retain_cdx.office.excel.package import extract_xlsx, pack_xlsx
+from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
 from PIL import Image
 
 

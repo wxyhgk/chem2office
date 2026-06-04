@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .units import parse_px
+from ._utils import parse_px
 
 
 @dataclass(frozen=True)
