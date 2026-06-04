@@ -57,3 +57,6 @@ class ShellTemplate:
     """Native Excel/ChemDraw OLE shell to reuse for stable OLE display."""
 
     xlsx: str | Path
+    preserve_aspect: bool = True
+    allow_resize: bool = False
+    fit_cdx: bool = False

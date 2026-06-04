@@ -4,7 +4,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from .relationships import build_rels
-from .worksheet import NS_MAIN, attach_ole_objects
+from .worksheet import NS_MAIN, attach_ole_objects, copy_sheet_layout
 
 
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -18,6 +18,7 @@ def merge_source_workbook(
     sheet_idx: int,
     prefix: str,
     preserve_object_pr: bool = True,
+    copy_layout: bool = False,
 ) -> str:
     """Merge OLE/drawing parts from a source OLE workbook into target sheet.
 
@@ -96,6 +97,9 @@ def merge_source_workbook(
         raise ValueError("Source OLE workbook has no oleObjects")
     if not preserve_object_pr:
         _normalize_object_pr(source_ole_objects)
+
+    if copy_layout:
+        copy_sheet_layout(source_dir / "xl" / "worksheets" / "sheet1.xml", sheet_path)
 
     attach_ole_objects(
         sheet_path,

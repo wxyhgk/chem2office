@@ -137,7 +137,10 @@ class ExcelCDXWriter:
             normalize_margin = display.normalize_margin
             normalize_fill_ratio = display.normalize_fill_ratio
             preserve_aspect = display.preserve_aspect
-        if row_height is None:
+        if shell_path is not None and display is None:
+            row_height = None
+            col_width = None
+        if row_height is None and shell_path is None:
             row_height = px_to_points(height_px)
 
         col, row = parse_cell(placement.cell)
@@ -173,7 +176,19 @@ class ExcelCDXWriter:
 
             source_xlsx = tmpdir / "source_ole.xlsx"
             if shell_path is not None:
-                build_source_workbook_from_shell(cdx_paths[0], shell_path, source_xlsx)
+                build_source_workbook_from_shell(
+                    cdx_paths[0],
+                    shell_path,
+                    source_xlsx,
+                    start_col=col if _shell_allow_resize(shell) else None,
+                    start_row=row if _shell_allow_resize(shell) else None,
+                    offset_x_px=placement.offset_x_px,
+                    offset_y_px=placement.offset_y_px,
+                    width_px=width_px if _shell_allow_resize(shell) and display is not None else None,
+                    height_px=height_px if _shell_allow_resize(shell) and display is not None else None,
+                    preserve_aspect=_shell_preserve_aspect(shell),
+                    fit_cdx=_shell_fit_cdx(shell),
+                )
             else:
                 build_source_ole_workbook(
                     cdx_paths,
@@ -201,16 +216,18 @@ class ExcelCDXWriter:
                 sheet_idx=sheet_idx,
                 prefix=prefix,
                 preserve_object_pr=shell_path is not None,
+                copy_layout=shell_path is not None,
             )
 
-        touch_sheet_layout(
-            sheet_path,
-            col=col,
-            start_row=row,
-            count=len(sources),
-            row_height=row_height,
-            col_width=col_width,
-        )
+        if shell_path is None and (row_height is not None or col_width is not None):
+            touch_sheet_layout(
+                sheet_path,
+                col=col,
+                start_row=row,
+                count=len(sources),
+                row_height=row_height,
+                col_width=col_width,
+            )
         ensure_ole_drawing_content_types(self.package_dir, drawing_name)
 
 
@@ -220,3 +237,21 @@ def _shell_path(shell: ShellTemplate | str | Path | None) -> Path | None:
     if isinstance(shell, ShellTemplate):
         return Path(shell.xlsx)
     return Path(shell)
+
+
+def _shell_preserve_aspect(shell: ShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ShellTemplate):
+        return shell.preserve_aspect
+    return True
+
+
+def _shell_allow_resize(shell: ShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ShellTemplate):
+        return shell.allow_resize
+    return False
+
+
+def _shell_fit_cdx(shell: ShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ShellTemplate):
+        return shell.fit_cdx
+    return False
