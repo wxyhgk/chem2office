@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -30,19 +31,18 @@ def merge_source_workbook(
     """
     drawing_name = f"{prefix}_drawing.xml"
     vml_name = f"{prefix}_vmlDrawing.vml"
-
-    _ensure_part_dirs(target_dir)
-    _copy_static_drawing_parts(source_dir, target_dir, drawing_name, vml_name)
-    copied_media: set[str] = set()
-    rels = _build_sheet_rels(
-        source_dir,
-        target_dir,
-        prefix,
-        drawing_name,
-        vml_name,
-        copied_media,
+    context = _OlePartMergeContext(
+        source_dir=source_dir,
+        target_dir=target_dir,
+        prefix=prefix,
+        drawing_name=drawing_name,
+        vml_name=vml_name,
     )
-    vml_rels = _build_vml_rels(source_dir, target_dir, prefix, copied_media)
+
+    context.ensure_part_dirs()
+    context.copy_static_drawing_parts()
+    rels = context.build_sheet_rels()
+    vml_rels = context.build_vml_rels()
 
     sheet_rels_path = target_dir / "xl" / "worksheets" / "_rels" / f"sheet{sheet_idx}.xml.rels"
     sheet_rels_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,142 +71,101 @@ def merge_source_workbook(
     return drawing_name
 
 
-def _ensure_part_dirs(target_dir: Path) -> None:
-    for rel in ["xl/drawings", "xl/drawings/_rels", "xl/embeddings", "xl/media"]:
-        (target_dir / rel).mkdir(parents=True, exist_ok=True)
+@dataclass
+class _OlePartMergeContext:
+    source_dir: Path
+    target_dir: Path
+    prefix: str
+    drawing_name: str
+    vml_name: str
+    copied_media: set[str] = field(default_factory=set)
 
+    def ensure_part_dirs(self) -> None:
+        for rel in ["xl/drawings", "xl/drawings/_rels", "xl/embeddings", "xl/media"]:
+            (self.target_dir / rel).mkdir(parents=True, exist_ok=True)
 
-def _copy_static_drawing_parts(
-    source_dir: Path,
-    target_dir: Path,
-    drawing_name: str,
-    vml_name: str,
-) -> None:
-    (target_dir / "xl" / "drawings" / drawing_name).write_bytes(
-        (source_dir / "xl" / "drawings" / "drawing1.xml").read_bytes()
-    )
-    (target_dir / "xl" / "drawings" / vml_name).write_bytes(
-        (source_dir / "xl" / "drawings" / "vmlDrawing1.vml").read_bytes()
-    )
+    def copy_static_drawing_parts(self) -> None:
+        (self.target_dir / "xl" / "drawings" / self.drawing_name).write_bytes(
+            (self.source_dir / "xl" / "drawings" / "drawing1.xml").read_bytes()
+        )
+        (self.target_dir / "xl" / "drawings" / self.vml_name).write_bytes(
+            (self.source_dir / "xl" / "drawings" / "vmlDrawing1.vml").read_bytes()
+        )
 
+    def build_sheet_rels(self) -> list[tuple[str, str, str]]:
+        rels = [
+            (
+                "rId1",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
+                f"../drawings/{self.drawing_name}",
+            ),
+            (
+                "rId2",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+                f"../drawings/{self.vml_name}",
+            ),
+        ]
+        source_rels = ET.parse(
+            self.source_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels"
+        ).getroot()
+        for rel in source_rels.findall(f"{{{REL_NS}}}Relationship"):
+            rid = rel.get("Id", "")
+            rtype = rel.get("Type", "")
+            target = rel.get("Target", "")
+            if rtype.endswith("/oleObject"):
+                rels.append(self.copy_ole_relationship(rid, rtype, target))
+            elif rtype.endswith("/image"):
+                rels.append(self.copy_media_relationship(rid, rtype, target))
+        return rels
 
-def _build_sheet_rels(
-    source_dir: Path,
-    target_dir: Path,
-    prefix: str,
-    drawing_name: str,
-    vml_name: str,
-    copied_media: set[str],
-) -> list[tuple[str, str, str]]:
-    rels = [
-        (
-            "rId1",
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
-            f"../drawings/{drawing_name}",
-        ),
-        (
-            "rId2",
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
-            f"../drawings/{vml_name}",
-        ),
-    ]
-    source_rels = ET.parse(
-        source_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels"
-    ).getroot()
-    for rel in source_rels.findall(f"{{{REL_NS}}}Relationship"):
-        rid = rel.get("Id", "")
-        rtype = rel.get("Type", "")
-        target = rel.get("Target", "")
-        if rtype.endswith("/oleObject"):
-            rels.append(
-                _copy_ole_relationship(source_dir, target_dir, prefix, rid, rtype, target)
-            )
-        elif rtype.endswith("/image"):
-            rels.append(
-                _copy_media_relationship(
-                    source_dir,
-                    target_dir,
-                    prefix,
-                    rid,
-                    rtype,
-                    target,
-                    copied_media,
+    def build_vml_rels(self) -> list[tuple[str, str, str]]:
+        vml_rels: list[tuple[str, str, str]] = []
+        source_vml_rels = ET.parse(
+            self.source_dir / "xl" / "drawings" / "_rels" / "vmlDrawing1.vml.rels"
+        ).getroot()
+        for rel in source_vml_rels.findall(f"{{{REL_NS}}}Relationship"):
+            vml_rels.append(
+                self.copy_media_relationship(
+                    rel.get("Id", ""),
+                    rel.get("Type", ""),
+                    rel.get("Target", ""),
                 )
             )
-    return rels
+        return vml_rels
 
-
-def _build_vml_rels(
-    source_dir: Path,
-    target_dir: Path,
-    prefix: str,
-    copied_media: set[str],
-) -> list[tuple[str, str, str]]:
-    vml_rels: list[tuple[str, str, str]] = []
-    source_vml_rels = ET.parse(
-        source_dir / "xl" / "drawings" / "_rels" / "vmlDrawing1.vml.rels"
-    ).getroot()
-    for rel in source_vml_rels.findall(f"{{{REL_NS}}}Relationship"):
-        vml_rels.append(
-            _copy_media_relationship(
-                source_dir,
-                target_dir,
-                prefix,
-                rel.get("Id", ""),
-                rel.get("Type", ""),
-                rel.get("Target", ""),
-                copied_media,
-            )
+    def copy_ole_relationship(
+        self,
+        rid: str,
+        rtype: str,
+        target: str,
+    ) -> tuple[str, str, str]:
+        name = Path(target).name
+        new_name = f"{self.prefix}_{name}"
+        (self.target_dir / "xl" / "embeddings" / new_name).write_bytes(
+            (self.source_dir / "xl" / "embeddings" / name).read_bytes()
         )
-    return vml_rels
+        return rid, rtype, f"../embeddings/{new_name}"
 
+    def copy_media_relationship(
+        self,
+        rid: str,
+        rtype: str,
+        target: str,
+    ) -> tuple[str, str, str]:
+        name = Path(target).name
+        new_name = f"{self.prefix}_{name}"
+        self.copy_media(name, new_name)
+        return rid, rtype, f"../media/{new_name}"
 
-def _copy_ole_relationship(
-    source_dir: Path,
-    target_dir: Path,
-    prefix: str,
-    rid: str,
-    rtype: str,
-    target: str,
-) -> tuple[str, str, str]:
-    name = Path(target).name
-    new_name = f"{prefix}_{name}"
-    (target_dir / "xl" / "embeddings" / new_name).write_bytes(
-        (source_dir / "xl" / "embeddings" / name).read_bytes()
-    )
-    return rid, rtype, f"../embeddings/{new_name}"
-
-
-def _copy_media_relationship(
-    source_dir: Path,
-    target_dir: Path,
-    prefix: str,
-    rid: str,
-    rtype: str,
-    target: str,
-    copied_media: set[str],
-) -> tuple[str, str, str]:
-    name = Path(target).name
-    new_name = f"{prefix}_{name}"
-    _copy_media(source_dir, target_dir, name, new_name, copied_media)
-    return rid, rtype, f"../media/{new_name}"
+    def copy_media(self, source_name: str, target_name: str) -> None:
+        if not source_name or target_name in self.copied_media:
+            return
+        (self.target_dir / "xl" / "media" / target_name).write_bytes(
+            (self.source_dir / "xl" / "media" / source_name).read_bytes()
+        )
+        self.copied_media.add(target_name)
 
 
 def _normalize_object_pr(ole_objects: ET.Element) -> None:
     for object_pr in ole_objects.findall(".//s:objectPr", {"s": NS_MAIN}):
         object_pr.attrib.pop("autoPict", None)
-
-
-def _copy_media(
-    source_dir: Path,
-    target_dir: Path,
-    source_name: str,
-    target_name: str,
-    copied: set[str],
-) -> None:
-    if not source_name or target_name in copied:
-        return
-    (target_dir / "xl" / "media" / target_name).write_bytes(
-        (source_dir / "xl" / "media" / source_name).read_bytes()
-    )
-    copied.add(target_name)

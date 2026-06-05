@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from retain_cdx.office.excel._insert import InsertPlan
+from retain_cdx.office.excel._insert.plan import InsertPlan
 from retain_cdx.office.excel._utils import index_to_col
 
 from .workbook import build_source_ole_workbook, build_source_workbook_from_shell

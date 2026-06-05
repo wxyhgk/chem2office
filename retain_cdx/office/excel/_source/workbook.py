@@ -12,6 +12,8 @@ from retain_cdx.office.excel._shell import (
 )
 from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
 
+from .generated import build_generated_source_workbook
+
 
 def build_source_ole_workbook(
     cdx_paths: list[Path],
@@ -29,15 +31,13 @@ def build_source_ole_workbook(
     preview_thick_lines: bool,
     preview_no_margin: bool,
 ) -> None:
-    from scripts.cli.inject_cdx_into_xlsx import _build_generate_mode
-
     # XLSX anchors use 96-dpi pixels. The existing generator accepts metric
     # lengths, so convert pixels to points for a stable display box.
     offset_x_pt = offset_x_px * 0.75
     offset_y_pt = offset_y_px * 0.75
     width_pt = width_px * 0.75
     height_pt = height_px * 0.75
-    _build_generate_mode(
+    build_generated_source_workbook(
         cdx_paths,
         output,
         col=col_letter,

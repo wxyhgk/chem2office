@@ -4,18 +4,9 @@ import tempfile
 from pathlib import Path
 
 from retain_cdx.structure import StructureSource
-from retain_cdx.office.excel._insert import build_insert_plan, write_cdx_sources
-from retain_cdx.office.excel._ooxml import (
-    ensure_ole_drawing_content_types,
-    extract_xlsx,
-    pack_xlsx,
-    parse_workbook_sheets,
-    sheet_index_from_path,
-    touch_sheet_layout,
-)
-from retain_cdx.office.excel._parts import merge_source_workbook
+from retain_cdx.office.excel._insert import build_insert_plan, execute_insert
+from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
 from retain_cdx.office.excel.options import DisplayOptions, Placement, ShellTemplate
-from retain_cdx.office.excel._source import build_source_workbook
 
 
 class ExcelCDXWriter:
@@ -138,40 +129,4 @@ class ExcelCDXWriter:
             normalize_fill_ratio=normalize_fill_ratio,
             preserve_aspect=preserve_aspect,
         )
-        sheets = parse_workbook_sheets(self.package_dir)
-        if sheet not in sheets:
-            raise ValueError(f"Sheet not found: {sheet}")
-
-        sheet_path = self.package_dir / sheets[sheet]
-        sheet_idx = sheet_index_from_path(sheets[sheet])
-        prefix = f"sheet{sheet_idx}_retain"
-
-        with tempfile.TemporaryDirectory(prefix="retain_cdx_source_") as tmp:
-            tmpdir = Path(tmp)
-            cdx_paths = write_cdx_sources(sources, tmpdir, plan)
-            source_xlsx = tmpdir / "source_ole.xlsx"
-            build_source_workbook(cdx_paths, source_xlsx, plan)
-
-            src_dir = tmpdir / "source"
-            src_dir.mkdir()
-            extract_xlsx(source_xlsx, src_dir)
-            drawing_name = merge_source_workbook(
-                self.package_dir,
-                src_dir,
-                sheet_path=sheet_path,
-                sheet_idx=sheet_idx,
-                prefix=prefix,
-                preserve_object_pr=plan.has_shell,
-                copy_layout=plan.has_shell,
-            )
-
-        if not plan.has_shell and (plan.row_height is not None or plan.col_width is not None):
-            touch_sheet_layout(
-                sheet_path,
-                col=plan.col,
-                start_row=plan.row,
-                count=len(sources),
-                row_height=plan.row_height,
-                col_width=plan.col_width,
-            )
-        ensure_ole_drawing_content_types(self.package_dir, drawing_name)
+        execute_insert(self.package_dir, sources, sheet=sheet, plan=plan)
