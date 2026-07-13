@@ -5,6 +5,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
+from retain_cdx.resources import bundled_template_xlsx
 from scripts.ole.embed import write_cdx_to_ole
 from scripts.render.preview import render_png
 from scripts.xlsx.namespaces import register_namespaces
@@ -151,46 +152,43 @@ def _build_generate_mode(
     preview_no_margin: bool = False,
 ) -> None:
     """Generate using bundled template, with optional custom anchors."""
-    bundled_template = Path(__file__).resolve().parents[2] / "template.xlsx"
-    bundled_template_sheet = (
-        Path(__file__).resolve().parents[2]
-        / "template"
-        / "xl"
-        / "worksheets"
-        / "sheet1.xml"
-    )
-    if from_spec and not to_spec:
-        base_anchor = extract_base_ole_anchor(bundled_template_sheet)
-        anchors = translate_anchors(
-            len(cdx_paths),
-            base_anchor=base_anchor,
-            from_spec=from_spec,
+    with bundled_template_xlsx() as bundled_template:
+        if from_spec and not to_spec:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmpdir = Path(tmp)
+                extract_xlsx(bundled_template, tmpdir)
+                bundled_template_sheet = tmpdir / "xl" / "worksheets" / "sheet1.xml"
+                base_anchor = extract_base_ole_anchor(bundled_template_sheet)
+            anchors = translate_anchors(
+                len(cdx_paths),
+                base_anchor=base_anchor,
+                from_spec=from_spec,
+            )
+        else:
+            anchors = compute_anchors(
+                len(cdx_paths),
+                col=col,
+                start_row=start_row,
+                margin_left=margin_left,
+                margin_top=margin_top,
+                width=width,
+                height=height,
+                from_spec=from_spec,
+                to_spec=to_spec,
+            )
+        _build_template_mode(
+            bundled_template,
+            cdx_paths,
+            output,
+            "CONTENTS",
+            anchors=anchors,
+            row_height=row_height,
+            preview_width=preview_width,
+            preview_height=preview_height,
+            preview_size=preview_size,
+            preview_thick_lines=preview_thick_lines,
+            preview_no_margin=preview_no_margin,
         )
-    else:
-        anchors = compute_anchors(
-            len(cdx_paths),
-            col=col,
-            start_row=start_row,
-            margin_left=margin_left,
-            margin_top=margin_top,
-            width=width,
-            height=height,
-            from_spec=from_spec,
-            to_spec=to_spec,
-        )
-    _build_template_mode(
-        bundled_template,
-        cdx_paths,
-        output,
-        "CONTENTS",
-        anchors=anchors,
-        row_height=row_height,
-        preview_width=preview_width,
-        preview_height=preview_height,
-        preview_size=preview_size,
-        preview_thick_lines=preview_thick_lines,
-        preview_no_margin=preview_no_margin,
-    )
 
 
 def main() -> None:

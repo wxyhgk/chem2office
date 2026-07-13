@@ -1,7 +1,203 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
+from typing import Any, Literal
+
+PreviewFormat = Literal["auto", "png", "emf"]
+ResolvedPreviewFormat = Literal["png", "emf"]
+PreviewBackend = Literal["auto", "rdkit", "obabel"]
+PreviewStyle = Literal["acs1996", "default"]
+
+
+def inkscape_available() -> bool:
+    return shutil.which("inkscape") is not None
+
+
+def obabel_available() -> bool:
+    return shutil.which("obabel") is not None
+
+
+def rdkit_available() -> bool:
+    try:
+        from rdkit.Chem.Draw import rdMolDraw2D  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def pycdxml_available() -> bool:
+    try:
+        from pycdxml.cdxml_converter.chemdraw_io import read_cdx  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def resolve_preview_format(requested: PreviewFormat | str) -> ResolvedPreviewFormat:
+    """Resolve a preview format request to a concrete format."""
+    value = (requested or "png").lower()
+    if value == "auto":
+        return "emf" if inkscape_available() else "png"
+    if value == "png":
+        return "png"
+    if value == "emf":
+        if not inkscape_available():
+            raise SystemExit(
+                "Inkscape is required for EMF preview. "
+                "Install it (e.g. `brew install inkscape`) or use preview_format='png'."
+            )
+        return "emf"
+    raise ValueError(f"Unsupported preview format: {requested!r}")
+
+
+def resolve_preview_backend(requested: PreviewBackend | str = "auto") -> str:
+    """Pick a concrete render backend.
+
+    Preference for ``auto``:
+      1. RDKit (+ pycdxml for CDX→CDXML) — ACS1996, no CLI
+      2. Open Babel CLI — fallback
+    """
+    value = (requested or "auto").lower()
+    if value == "rdkit":
+        if not rdkit_available():
+            raise SystemExit(
+                "RDKit is required for preview_backend='rdkit'. "
+                "Install with: pip install -e '.[chem]'"
+            )
+        if not pycdxml_available():
+            raise SystemExit(
+                "pycdxml is required to render CDX with RDKit. "
+                "Install with: pip install -e '.[chem]'"
+            )
+        return "rdkit"
+    if value == "obabel":
+        if not obabel_available():
+            raise SystemExit(
+                "Open Babel (obabel) is required for preview_backend='obabel'."
+            )
+        return "obabel"
+    if value == "auto":
+        if rdkit_available() and pycdxml_available():
+            return "rdkit"
+        if obabel_available():
+            return "obabel"
+        raise SystemExit(
+            "No preview backend available. Install chem extras "
+            "(RDKit + pycdxml) or system Open Babel (obabel)."
+        )
+    raise ValueError(f"Unsupported preview backend: {requested!r}")
+
+
+def mol_from_cdx(cdx_path: Path) -> Any:
+    """Load the first molecule from a CDX file via pycdxml → CDXML → RDKit."""
+    from pycdxml.cdxml_converter.chemdraw_io import read_cdx
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    doc = read_cdx(str(cdx_path))
+    cdxml = doc.to_cdxml()
+    mols = list(Chem.MolsFromCDXML(cdxml) or [])
+    mols = [m for m in mols if m is not None]
+    if not mols:
+        raise ValueError(f"No molecules parsed from CDX: {cdx_path}")
+    mol = mols[0]
+    if mol.GetNumConformers() == 0:
+        AllChem.Compute2DCoords(mol)
+    return mol
+
+
+def render_mol_png(
+    mol: Any,
+    png_path: Path,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    style: PreviewStyle = "acs1996",
+    mono: bool = True,
+) -> None:
+    """Render an RDKit molecule to PNG (ACS1996 by default)."""
+    from rdkit.Chem import Draw
+
+    png_path = Path(png_path)
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if image_size is not None:
+        width = height = image_size
+
+    if width is None and height is None:
+        # Flexi canvas is recommended for ACS1996 mode.
+        drawer = Draw.MolDraw2DCairo(-1, -1)
+        if style == "acs1996":
+            Draw.DrawMoleculeACS1996(drawer, mol)
+        else:
+            opts = drawer.drawOptions()
+            if mono:
+                opts.useBWAtomPalette()
+            drawer.DrawMolecule(mol)
+    else:
+        w = int(width or height or 300)
+        h = int(height or width or 300)
+        drawer = Draw.MolDraw2DCairo(w, h)
+        opts = drawer.drawOptions()
+        if style == "acs1996":
+            Draw.SetACS1996Mode(opts, Draw.MeanBondLength(mol))
+        elif mono:
+            opts.useBWAtomPalette()
+        drawer.DrawMolecule(mol)
+
+    drawer.FinishDrawing()
+    png_path.write_bytes(drawer.GetDrawingText())
+
+
+def render_mol_svg(
+    mol: Any,
+    svg_path: Path,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    style: PreviewStyle = "acs1996",
+    mono: bool = True,
+) -> None:
+    """Render an RDKit molecule to SVG (ACS1996 by default)."""
+    from rdkit.Chem import Draw
+
+    svg_path = Path(svg_path)
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if image_size is not None:
+        width = height = image_size
+
+    if width is None and height is None:
+        if style == "acs1996":
+            svg_path.write_text(Draw.MolToACS1996SVG(mol), encoding="utf-8")
+            return
+        drawer = Draw.MolDraw2DSVG(-1, -1)
+        opts = drawer.drawOptions()
+        if mono:
+            opts.useBWAtomPalette()
+        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        svg_path.write_text(drawer.GetDrawingText(), encoding="utf-8")
+        return
+
+    w = int(width or height or 300)
+    h = int(height or width or 300)
+    drawer = Draw.MolDraw2DSVG(w, h)
+    opts = drawer.drawOptions()
+    if style == "acs1996":
+        Draw.SetACS1996Mode(opts, Draw.MeanBondLength(mol))
+    elif mono:
+        opts.useBWAtomPalette()
+    drawer.DrawMolecule(mol)
+    drawer.FinishDrawing()
+    svg_path.write_text(drawer.GetDrawingText(), encoding="utf-8")
 
 
 def render_png(
@@ -14,33 +210,64 @@ def render_png(
     thick_lines: bool = False,
     no_margin: bool = False,
     no_title: bool = True,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
     crop: bool = False,
     crop_padding: int = 2,
     keep_size: bool = True,
     target_aspect: float | None = None,
-) -> None:
-    cmd = ["obabel", "-icdx", str(cdx_path), "-opng", "-O", str(png_path)]
-    if image_size is not None:
-        cmd.extend(["-xp", str(image_size)])
-    if width is not None:
-        cmd.extend(["-xw", str(width)])
-    if height is not None:
-        cmd.extend(["-xh", str(height)])
-    if thick_lines:
-        cmd.append("-xt")
-    if no_margin:
-        cmd.append("-xm")
-    if no_title:
-        cmd.append("-xd")
+) -> str:
+    """Render CDX to PNG. Returns the backend used (``rdkit`` or ``obabel``)."""
+    chosen = resolve_preview_backend(backend)
+    png_path = Path(png_path)
+    png_path.parent.mkdir(parents=True, exist_ok=True)
 
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    if chosen == "rdkit":
+        try:
+            mol = mol_from_cdx(Path(cdx_path))
+            render_mol_png(
+                mol,
+                png_path,
+                width=width,
+                height=height,
+                image_size=image_size,
+                style=style,
+                mono=mono,
+            )
+            if crop:
+                crop_png_whitespace(
+                    png_path,
+                    padding=crop_padding,
+                    keep_size=keep_size,
+                    target_aspect=target_aspect,
+                )
+            return "rdkit"
+        except SystemExit:
+            raise
+        except Exception as exc:
+            if backend == "rdkit":
+                raise SystemExit(f"RDKit preview failed: {exc}") from exc
+            # auto: fall through to Open Babel
+            chosen = "obabel"
+            if not obabel_available():
+                raise SystemExit(
+                    f"RDKit preview failed ({exc}) and Open Babel is not available."
+                ) from exc
+
+    cmd = _obabel_cmd(
+        cdx_path,
+        png_path,
+        output_format="png",
+        width=width,
+        height=height,
+        image_size=image_size,
+        thick_lines=thick_lines,
+        no_margin=no_margin,
+        no_title=no_title,
+        mono=mono,
     )
-    if proc.returncode != 0:
-        raise SystemExit(f"obabel failed: {proc.stderr.strip()}")
+    _run(cmd, tool="obabel")
     if crop:
         crop_png_whitespace(
             png_path,
@@ -48,6 +275,339 @@ def render_png(
             keep_size=keep_size,
             target_aspect=target_aspect,
         )
+    return "obabel"
+
+
+def render_svg(
+    cdx_path: Path,
+    svg_path: Path,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    thick_lines: bool = False,
+    no_margin: bool = False,
+    no_title: bool = True,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+) -> str:
+    """Render CDX to SVG. Returns the backend used."""
+    chosen = resolve_preview_backend(backend)
+    svg_path = Path(svg_path)
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if chosen == "rdkit":
+        try:
+            mol = mol_from_cdx(Path(cdx_path))
+            render_mol_svg(
+                mol,
+                svg_path,
+                width=width,
+                height=height,
+                image_size=image_size,
+                style=style,
+                mono=mono,
+            )
+            return "rdkit"
+        except SystemExit:
+            raise
+        except Exception as exc:
+            if backend == "rdkit":
+                raise SystemExit(f"RDKit SVG preview failed: {exc}") from exc
+            chosen = "obabel"
+            if not obabel_available():
+                raise SystemExit(
+                    f"RDKit SVG preview failed ({exc}) and Open Babel is not available."
+                ) from exc
+
+    cmd = _obabel_cmd(
+        cdx_path,
+        svg_path,
+        output_format="svg",
+        width=width,
+        height=height,
+        image_size=image_size,
+        thick_lines=thick_lines,
+        no_margin=no_margin,
+        no_title=no_title,
+        mono=mono,
+    )
+    _run(cmd, tool="obabel")
+    return "obabel"
+
+
+def render_emf(
+    cdx_path: Path,
+    emf_path: Path,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    thick_lines: bool = False,
+    no_margin: bool = False,
+    no_title: bool = True,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+    target_aspect: float | None = None,
+    crop_padding: int = 2,
+    fill_ratio: float = 0.92,
+) -> str:
+    """Render CDX to a **vector** EMF via SVG + Inkscape.
+
+    Pipeline (sharp at any zoom; matches shell box aspect):
+      1. flexi ACS SVG (vector, tight to molecule)
+      2. letterbox SVG viewBox to shell aspect / fill ratio
+      3. Inkscape SVG → EMF (keeps paths; no PNG raster)
+    """
+    if not inkscape_available():
+        raise SystemExit(
+            "Inkscape is required for EMF preview. "
+            "Install it (e.g. `brew install inkscape`)."
+        )
+
+    emf_path = Path(emf_path)
+    emf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Prefer explicit width/height aspect when provided.
+    aspect = target_aspect
+    if aspect is None and width and height and height > 0:
+        aspect = width / height
+    elif aspect is None and image_size:
+        aspect = 1.0
+
+    with tempfile.TemporaryDirectory(prefix="retain_cdx_emf_") as tmp:
+        tmpdir = Path(tmp)
+        svg_path = tmpdir / f"{Path(cdx_path).stem}.svg"
+        used = render_svg(
+            cdx_path,
+            svg_path,
+            # Always flexi for ACS tightness; aspect is applied via viewBox.
+            width=None,
+            height=None,
+            image_size=None,
+            thick_lines=thick_lines,
+            no_margin=no_margin,
+            no_title=no_title,
+            mono=mono,
+            style=style,
+            backend=backend,
+        )
+        if aspect is not None and aspect > 0:
+            letterbox_svg_to_aspect(
+                svg_path,
+                target_aspect=aspect,
+                fill_ratio=fill_ratio,
+                padding_px=float(crop_padding),
+            )
+
+        _run(
+            [
+                "inkscape",
+                str(svg_path),
+                "--export-filename",
+                str(emf_path),
+                # Keep text as paths so Excel does not substitute fonts.
+                "--export-text-to-path",
+            ],
+            tool="inkscape",
+        )
+
+    if not emf_path.exists() or emf_path.stat().st_size == 0:
+        raise SystemExit(f"Inkscape did not produce EMF: {emf_path}")
+    return used
+
+
+def letterbox_svg_to_aspect(
+    svg_path: Path,
+    *,
+    target_aspect: float,
+    fill_ratio: float = 0.95,
+    padding_px: float = 2.0,
+) -> None:
+    """Pad an SVG viewBox to *target_aspect* and scale content by *fill_ratio*.
+
+    Content drawn in the original user space stays put; the viewBox expands
+    (letterbox) so the final frame matches the OLE/shell display box.
+    """
+    import re
+
+    if target_aspect <= 0:
+        return
+    fill_ratio = min(max(fill_ratio, 0.1), 1.0)
+    text = Path(svg_path).read_text(encoding="utf-8", errors="replace")
+
+    vb_match = re.search(
+        r'viewBox=(["\'])\s*([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s*\1',
+        text,
+    )
+    if vb_match:
+        x0, y0 = float(vb_match.group(2)), float(vb_match.group(3))
+        content_w, content_h = float(vb_match.group(4)), float(vb_match.group(5))
+    else:
+        wh = re.search(
+            r'width=(["\'])([-\d.eE+]+)(?:px)?\1[^>]*height=(["\'])([-\d.eE+]+)(?:px)?\3',
+            text,
+            flags=re.I | re.S,
+        )
+        if not wh:
+            wh = re.search(
+                r'height=(["\'])([-\d.eE+]+)(?:px)?\1[^>]*width=(["\'])([-\d.eE+]+)(?:px)?\3',
+                text,
+                flags=re.I | re.S,
+            )
+            if not wh:
+                return
+            content_w, content_h = float(wh.group(4)), float(wh.group(2))
+        else:
+            content_w, content_h = float(wh.group(2)), float(wh.group(4))
+        x0, y0 = 0.0, 0.0
+
+    if content_w <= 0 or content_h <= 0:
+        return
+
+    # Inflate content box slightly so strokes/labels are not clipped.
+    pad = max(0.0, padding_px)
+    content_w += 2 * pad
+    content_h += 2 * pad
+    x0 -= pad
+    y0 -= pad
+
+    # Letterbox content into target aspect, then expand so content uses fill_ratio.
+    content_aspect = content_w / content_h
+    if content_aspect > target_aspect:
+        box_w = content_w
+        box_h = content_w / target_aspect
+    else:
+        box_h = content_h
+        box_w = content_h * target_aspect
+
+    box_w /= fill_ratio
+    box_h /= fill_ratio
+    # Keep exact aspect after float ops.
+    box_h = box_w / target_aspect
+
+    off_x = (box_w - content_w) / 2.0
+    off_y = (box_h - content_h) / 2.0
+    vb_x = x0 - off_x
+    vb_y = y0 - off_y
+
+    def _replace_viewbox(match: re.Match[str]) -> str:
+        quote = match.group(1)
+        return f'viewBox={quote}{vb_x:g} {vb_y:g} {box_w:g} {box_h:g}{quote}'
+
+    if vb_match:
+        text = re.sub(
+            r'viewBox=(["\'])\s*[-\d.eE+]+\s+[-\d.eE+]+\s+[-\d.eE+]+\s+[-\d.eE+]+\s*\1',
+            _replace_viewbox,
+            text,
+            count=1,
+        )
+    else:
+        # Insert viewBox after <svg ...>
+        text = re.sub(
+            r"(<svg\b[^>]*)(>)",
+            rf'\1 viewBox="{vb_x:g} {vb_y:g} {box_w:g} {box_h:g}"\2',
+            text,
+            count=1,
+            flags=re.I,
+        )
+
+    # Keep width/height attributes consistent with the new frame aspect.
+    out_w = 400.0
+    out_h = out_w / target_aspect
+    text = re.sub(
+        r'\bwidth=(["\'])[^"\']*\1',
+        f'width="{out_w:g}px"',
+        text,
+        count=1,
+        flags=re.I,
+    )
+    text = re.sub(
+        r'\bheight=(["\'])[^"\']*\1',
+        f'height="{out_h:g}px"',
+        text,
+        count=1,
+        flags=re.I,
+    )
+
+    Path(svg_path).write_text(text, encoding="utf-8")
+
+
+def render_preview(
+    cdx_path: Path,
+    output_path: Path,
+    *,
+    format: PreviewFormat | str = "png",
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    thick_lines: bool = False,
+    no_margin: bool = False,
+    no_title: bool = True,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+    crop: bool = False,
+    crop_padding: int = 2,
+    keep_size: bool = True,
+    target_aspect: float | None = None,
+    fill_ratio: float = 0.92,
+) -> ResolvedPreviewFormat:
+    """Render a preview image.
+
+    Defaults:
+      - format: PNG
+      - backend: RDKit ACS1996 when available, else Open Babel
+      - mono: True (ACS1996 is monochrome; Open Babel uses ``-xu``/``-xU``)
+    """
+    resolved = resolve_preview_format(format)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if resolved == "emf":
+        render_emf(
+            cdx_path,
+            output_path,
+            width=width,
+            height=height,
+            image_size=image_size,
+            thick_lines=thick_lines,
+            no_margin=no_margin,
+            no_title=no_title,
+            mono=mono,
+            style=style,
+            backend=backend,
+            target_aspect=target_aspect,
+            crop_padding=crop_padding,
+            fill_ratio=fill_ratio,
+        )
+        return "emf"
+
+    render_png(
+        cdx_path,
+        output_path,
+        width=width,
+        height=height,
+        image_size=image_size,
+        thick_lines=thick_lines,
+        no_margin=no_margin,
+        no_title=no_title,
+        mono=mono,
+        style=style,
+        backend=backend,
+        crop=crop,
+        crop_padding=crop_padding,
+        keep_size=keep_size,
+        target_aspect=target_aspect,
+    )
+    return "png"
+
+
+def preview_extension(format: PreviewFormat | str) -> str:
+    """Return the file extension (without dot) for a resolved preview format."""
+    return resolve_preview_format(format)
 
 
 def crop_png_whitespace(
@@ -58,10 +618,106 @@ def crop_png_whitespace(
     threshold: int = 245,
     keep_size: bool = True,
     target_aspect: float | None = None,
+    fill_ratio: float = 1.0,
 ) -> None:
     from PIL import Image
 
     image = Image.open(png_path).convert("RGB")
+    cropped = _crop_non_background(image, padding=padding, background=background, threshold=threshold)
+    if cropped is None:
+        return
+    if not keep_size:
+        cropped.save(png_path)
+        return
+
+    width, height = image.size
+    if target_aspect is not None and target_aspect > 0:
+        if width / height > target_aspect:
+            canvas_height = height
+            canvas_width = max(1, round(canvas_height * target_aspect))
+        else:
+            canvas_width = width
+            canvas_height = max(1, round(canvas_width / target_aspect))
+    else:
+        canvas_width, canvas_height = width, height
+
+    letterbox_image(
+        cropped,
+        canvas_width=canvas_width,
+        canvas_height=canvas_height,
+        fill_ratio=fill_ratio,
+        padding=padding,
+        background=background,
+    ).save(png_path)
+
+
+def letterbox_png(
+    png_path: Path,
+    *,
+    canvas_width: int,
+    canvas_height: int,
+    fill_ratio: float = 0.92,
+    padding: int = 2,
+    background: tuple[int, int, int] = (255, 255, 255),
+    threshold: int = 245,
+    recrop: bool = True,
+) -> None:
+    """Fit the (optionally re-cropped) PNG content into a fixed canvas."""
+    from PIL import Image
+
+    image = Image.open(png_path).convert("RGB")
+    content = image
+    if recrop:
+        cropped = _crop_non_background(
+            image, padding=padding, background=background, threshold=threshold
+        )
+        if cropped is not None:
+            content = cropped
+    letterbox_image(
+        content,
+        canvas_width=canvas_width,
+        canvas_height=canvas_height,
+        fill_ratio=fill_ratio,
+        padding=padding,
+        background=background,
+    ).save(png_path)
+
+
+def letterbox_image(
+    image,
+    *,
+    canvas_width: int,
+    canvas_height: int,
+    fill_ratio: float = 0.92,
+    padding: int = 2,
+    background: tuple[int, int, int] = (255, 255, 255),
+):
+    """Scale *image* to occupy *fill_ratio* of the canvas and center it."""
+    from PIL import Image
+
+    fill_ratio = min(max(fill_ratio, 0.1), 1.0)
+    max_width = max(1, int((canvas_width - 2 * padding) * fill_ratio))
+    max_height = max(1, int((canvas_height - 2 * padding) * fill_ratio))
+    scale = min(max_width / max(image.width, 1), max_height / max(image.height, 1))
+    resized_width = max(1, round(image.width * scale))
+    resized_height = max(1, round(image.height * scale))
+    resized = image.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (canvas_width, canvas_height), background)
+    offset = (
+        (canvas_width - resized_width) // 2,
+        (canvas_height - resized_height) // 2,
+    )
+    canvas.paste(resized, offset)
+    return canvas
+
+
+def _crop_non_background(
+    image,
+    *,
+    padding: int,
+    background: tuple[int, int, int],
+    threshold: int,
+):
     pixels = image.load()
     width, height = image.size
     left, top = width, height
@@ -81,32 +737,106 @@ def crop_png_whitespace(
                 bottom = max(bottom, y)
 
     if right < left or bottom < top:
-        return
+        return None
     left = max(0, left - padding)
     top = max(0, top - padding)
     right = min(width, right + padding + 1)
     bottom = min(height, bottom + padding + 1)
-    cropped = image.crop((left, top, right, bottom))
-    if not keep_size:
-        cropped.save(png_path)
-        return
+    return image.crop((left, top, right, bottom))
+
+
+def _resolve_letterbox_canvas(
+    png_path: Path,
+    *,
+    width: int | None,
+    height: int | None,
+    image_size: int | None,
+    target_aspect: float | None,
+    min_scale: int = 4,
+) -> tuple[int, int]:
+    """Choose a high-res canvas that matches the shell display aspect."""
+    from PIL import Image
+
+    if image_size is not None:
+        return int(image_size), int(image_size)
+    if width is not None and height is not None:
+        return max(1, int(width)), max(1, int(height))
+
+    with Image.open(png_path) as im:
+        content_w, content_h = im.size
 
     if target_aspect is not None and target_aspect > 0:
-        if width / height > target_aspect:
-            canvas_height = height
-            canvas_width = max(1, round(canvas_height * target_aspect))
+        # Prefer a canvas at least min_scale times a typical shell pixel box,
+        # while remaining large enough for the cropped content.
+        base = max(content_w, content_h, 120)
+        if target_aspect >= 1.0:
+            canvas_w = max(base * min_scale // 2, content_w)
+            canvas_h = max(1, round(canvas_w / target_aspect))
         else:
-            canvas_width = width
-            canvas_height = max(1, round(canvas_width / target_aspect))
-    else:
-        canvas_width, canvas_height = width, height
-    max_width = max(1, canvas_width - (2 * padding))
-    max_height = max(1, canvas_height - (2 * padding))
-    scale = min(max_width / cropped.width, max_height / cropped.height)
-    resized_width = max(1, round(cropped.width * scale))
-    resized_height = max(1, round(cropped.height * scale))
-    resized = cropped.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", (canvas_width, canvas_height), background)
-    offset = ((canvas_width - resized_width) // 2, (canvas_height - resized_height) // 2)
-    canvas.paste(resized, offset)
-    canvas.save(png_path)
+            canvas_h = max(base * min_scale // 2, content_h)
+            canvas_w = max(1, round(canvas_h * target_aspect))
+        # Ensure content can fit at fill_ratio ~0.92
+        scale_w = content_w / max(canvas_w * 0.92, 1)
+        scale_h = content_h / max(canvas_h * 0.92, 1)
+        grow = max(scale_w, scale_h, 1.0)
+        if grow > 1.0:
+            canvas_w = max(1, round(canvas_w * grow))
+            canvas_h = max(1, round(canvas_h * grow))
+        return canvas_w, canvas_h
+
+    if width is not None:
+        return max(1, int(width)), max(1, int(width))
+    if height is not None:
+        return max(1, int(height)), max(1, int(height))
+    return max(content_w, 1), max(content_h, 1)
+
+
+def _obabel_cmd(
+    cdx_path: Path,
+    output_path: Path,
+    *,
+    output_format: str,
+    width: int | None,
+    height: int | None,
+    image_size: int | None,
+    thick_lines: bool,
+    no_margin: bool,
+    no_title: bool,
+    mono: bool = True,
+) -> list[str]:
+    cmd = [
+        "obabel",
+        "-icdx",
+        str(cdx_path),
+        f"-o{output_format}",
+        "-O",
+        str(output_path),
+    ]
+    if image_size is not None:
+        cmd.extend(["-xp", str(image_size)])
+    if width is not None:
+        cmd.extend(["-xw", str(width)])
+    if height is not None:
+        cmd.extend(["-xh", str(height)])
+    if thick_lines:
+        cmd.append("-xt")
+    if no_margin:
+        cmd.append("-xm")
+    if no_title:
+        cmd.append("-xd")
+    if mono:
+        # -xu: no CPK/element atom colors; -xU: ignore embedded/internal colors.
+        cmd.extend(["-xu", "-xU"])
+    return cmd
+
+
+def _run(cmd: list[str], *, tool: str) -> None:
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise SystemExit(f"{tool} failed: {detail}")

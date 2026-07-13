@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from retain_cdx.ole.embed import write_cdx_to_ole
+from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
 
 from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
 from retain_cdx.office.excel._shell import (
     patch_shell_geometry,
     read_vml_size_px,
+    remove_shell_ole_border,
     replace_shell_preview,
 )
 from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
@@ -30,6 +32,10 @@ def build_source_ole_workbook(
     preview_height: int | None,
     preview_thick_lines: bool,
     preview_no_margin: bool,
+    preview_format: PreviewFormat = "png",
+    preview_mono: bool = True,
+    preview_backend: PreviewBackend = "auto",
+    preview_style: PreviewStyle = "acs1996",
 ) -> None:
     # XLSX anchors use 96-dpi pixels. The existing generator accepts metric
     # lengths, so convert pixels to points for a stable display box.
@@ -46,13 +52,15 @@ def build_source_ole_workbook(
         margin_top=f"{offset_y_pt}pt",
         width=f"{width_pt}pt",
         height=f"{height_pt}pt",
-        from_spec=None,
-        to_spec=None,
         row_height=row_height,
         preview_width=preview_width,
         preview_height=preview_height,
         preview_thick_lines=preview_thick_lines,
         preview_no_margin=preview_no_margin,
+        preview_format=preview_format,
+        preview_mono=preview_mono,
+        preview_backend=preview_backend,
+        preview_style=preview_style,
     )
 
 
@@ -73,6 +81,10 @@ def build_source_workbook_from_shell(
     preview_height: int | None = None,
     preview_thick_lines: bool = False,
     preview_no_margin: bool = True,
+    preview_format: PreviewFormat = "png",
+    preview_mono: bool = True,
+    preview_backend: PreviewBackend = "auto",
+    preview_style: PreviewStyle = "acs1996",
 ) -> None:
     """Build a one-object source workbook by reusing a native OLE shell."""
     import tempfile
@@ -96,6 +108,10 @@ def build_source_workbook_from_shell(
             height=preview_height,
             thick_lines=preview_thick_lines,
             no_margin=preview_no_margin,
+            format=preview_format,
+            mono=preview_mono,
+            backend=preview_backend,
+            style=preview_style,
         )
         if start_col is not None and start_row is not None:
             patch_shell_geometry(
@@ -107,7 +123,11 @@ def build_source_workbook_from_shell(
                 width_px=width_px,
                 height_px=height_px,
                 preserve_aspect=preserve_aspect,
+                # Auto-center when caller did not supply an explicit in-cell offset.
+                center_in_cell=(offset_x_px == 0 and offset_y_px == 0),
             )
+        # Geometry rewrite can reintroduce template stroke attrs; clear again.
+        remove_shell_ole_border(package_dir)
         pack_xlsx(package_dir, output)
 
 

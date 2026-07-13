@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from retain_cdx.resources import bundled_template_xlsx
 from scripts.ole.embed import write_cdx_to_ole
 from scripts.render.preview import render_png
 from scripts.xlsx.content_types import ensure_png_content_type
@@ -290,7 +291,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--template",
-        default=str(Path(__file__).resolve().parents[2] / "template.xlsx"),
+        default=None,
         help="Template XLSX with a ChemDraw OLE object",
     )
     parser.add_argument(
@@ -305,16 +306,29 @@ def main() -> None:
     if not cdx_path.exists():
         raise SystemExit(f"CDX not found: {cdx_path}")
 
-    build_state_pair_layout(
-        cdx_path,
-        Path(args.output),
-        top_label=args.top_label,
-        bottom_label=args.bottom_label,
-        template=Path(args.template),
-        a_column_pixels=args.a_column_pixels,
-        row_pixels=args.row_pixels,
-        fill_ratio=args.fill_ratio,
-    )
+    if args.template:
+        build_state_pair_layout(
+            cdx_path,
+            Path(args.output),
+            top_label=args.top_label,
+            bottom_label=args.bottom_label,
+            template=Path(args.template),
+            a_column_pixels=args.a_column_pixels,
+            row_pixels=args.row_pixels,
+            fill_ratio=args.fill_ratio,
+        )
+    else:
+        with bundled_template_xlsx() as template:
+            build_state_pair_layout(
+                cdx_path,
+                Path(args.output),
+                top_label=args.top_label,
+                bottom_label=args.bottom_label,
+                template=template,
+                a_column_pixels=args.a_column_pixels,
+                row_pixels=args.row_pixels,
+                fill_ratio=args.fill_ratio,
+            )
     print(f"Wrote {args.output}")
 
 

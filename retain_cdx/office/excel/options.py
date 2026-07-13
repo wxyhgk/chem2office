@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
+
 from ._utils import parse_px
 
 
@@ -29,6 +31,13 @@ class PreviewOptions:
     height: int | None = None
     thick_lines: bool = False
     no_margin: bool = False
+    mono: bool = True
+    # "png" default; "emf" uses SVG + Inkscape; "auto" prefers emf when available.
+    format: PreviewFormat = "png"
+    # "auto" prefers RDKit ACS1996, then Open Babel.
+    backend: PreviewBackend = "auto"
+    # RDKit drawing style; ACS1996 is monochrome journal style.
+    style: PreviewStyle = "acs1996"
 
 
 @dataclass(frozen=True)
@@ -58,5 +67,7 @@ class ShellTemplate:
 
     xlsx: str | Path
     preserve_aspect: bool = True
-    allow_resize: bool = False
+    # When True (default), honor insert cell/offset so the OLE is not stuck at the
+    # shell template's original anchor (e.g. shell_large mid-sheet placement).
+    allow_resize: bool = True
     fit_cdx: bool = False

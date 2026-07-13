@@ -23,6 +23,7 @@ def patch_shell_geometry(
     width_px: int | None,
     height_px: int | None,
     preserve_aspect: bool,
+    center_in_cell: bool = False,
 ) -> None:
     sheet_path = package_dir / "xl" / "worksheets" / "sheet1.xml"
     drawing_path = package_dir / "xl" / "drawings" / "drawing1.xml"
@@ -36,7 +37,18 @@ def patch_shell_geometry(
         preserve_aspect=preserve_aspect,
     )
 
-    grid = ExcelGridMetrics()
+    # Use the worksheet's real col/row sizes (after layout copy), not defaults.
+    grid = ExcelGridMetrics.from_worksheet(sheet_path)
+
+    # Center the OLE inside the target cell when no explicit in-cell offset.
+    # shell_large makes A very wide / row 1 very tall, so (0,0) looks "stuck"
+    # in the top-left corner of the cell.
+    if center_in_cell and offset_x_px == 0 and offset_y_px == 0:
+        cell_w = grid.col_width_px(start_col - 1)
+        cell_h = grid.row_height_px(start_row - 1)
+        offset_x_px = max(0, (cell_w - target_size.width_px) // 2)
+        offset_y_px = max(0, (cell_h - target_size.height_px) // 2)
+
     anchor = grid.anchor_for_box(
         start_col=start_col,
         start_row=start_row,

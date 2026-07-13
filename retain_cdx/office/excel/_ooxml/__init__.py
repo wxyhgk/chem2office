@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .content_types import ensure_ole_drawing_content_types, ensure_png_content_type
+from .content_types import (
+    ensure_content_type_defaults,
+    ensure_emf_content_type,
+    ensure_ole_drawing_content_types,
+    ensure_png_content_type,
+)
 from .package import extract_xlsx, pack_xlsx
 from .relationships import build_rels, build_sheet_relationships, build_vml_relationships
 from .sheet_layout import copy_sheet_layout, touch_sheet_layout
@@ -13,6 +18,8 @@ __all__ = [
     "build_sheet_relationships",
     "build_vml_relationships",
     "copy_sheet_layout",
+    "ensure_content_type_defaults",
+    "ensure_emf_content_type",
     "ensure_ole_drawing_content_types",
     "ensure_png_content_type",
     "extract_xlsx",

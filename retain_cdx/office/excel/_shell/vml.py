@@ -48,6 +48,17 @@ def patch_vml_shape(
         count=1,
         flags=re.S,
     )
+    # Prefer no visible border on the OLE container.
+    if re.search(r'\bstroked="', vml_text):
+        vml_text = re.sub(r'\bstroked="[^"]*"', 'stroked="f"', vml_text, count=1)
+    else:
+        vml_text = re.sub(
+            r"(<v:shape\b)",
+            r'\1 stroked="f"',
+            vml_text,
+            count=1,
+        )
+    vml_text = re.sub(r'\s+strokecolor="[^"]*"', "", vml_text)
     vml_text = re.sub(
         r"<x:Anchor>.*?</x:Anchor>",
         f"<x:Anchor>\n    {anchor.to_vml_anchor()}</x:Anchor>",

@@ -1,8 +1,9 @@
 # ChemDraw OLE 注入（Excel）
 
 这个仓库实现了 ChemDraw 的 “OLE 模板注入” 流程，在 Linux/macOS 下批量生成
-可编辑的 ChemDraw OLE。默认模式会直接复用仓库内置的 `template.xlsx`
-作为稳定骨架；如果显式传入 `--template`，则使用你指定的模板文件。
+可编辑的 ChemDraw OLE。默认模式会直接复用包内内置的模板
+（`retain_cdx/data/template.xlsx`）作为稳定骨架；如果显式传入
+`--template`，则使用你指定的模板文件。
 
 ## 为什么默认仍然依赖模板
 
@@ -38,45 +39,111 @@ Excel OLE 生成器。
 
 ## 文件说明
 
-- `inject_cdx_into_xlsx.py` - 入口脚本（兼容旧用法，内部调用 `scripts/`）。
-- `scripts/` - 拆分后的模块化脚本目录。
-  - `scripts/cli/` - CLI 入口
+- `retain_cdx/` - 库主包（`ExcelCDXWriter` 等 API）。
+  - `retain_cdx/data/template.xlsx` - 默认使用的内置模板
+    （单行、已包含一个 ChemDraw OLE 对象）。
+- `scripts/` - 模块化脚本目录。
+  - `scripts/cli/` - CLI 入口（`python3 -m scripts.cli.<名称>` 运行）
   - `scripts/ole/` - OLE 注入逻辑
   - `scripts/render/` - 预览图生成
   - `scripts/xlsx/` - XLSX 结构处理
-- `template.xlsx` - 默认使用的内置模板（单行、已包含一个 ChemDraw OLE 对象）。
-- `template/` - `template.xlsx` 解包后的静态参考文件。
+- `examples/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
+- `docs/` - 开发记录与参考资料。
+  - `docs/template_reference/` - 内置模板解包后的静态参考文件。
+- `tests/` - 测试与夹具。
 
 ## 依赖
 
-- Python 3
+- Python 3.10+
 - `olefile`（`pip install olefile`）
 - Open Babel 命令行（`obabel`，用于生成预览 PNG）
+- 可选：`Pillow`（用于预览图裁剪，`.[dev]` 会安装）
+
+## 开发安装
+
+建议在虚拟环境中用 editable 模式安装：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
+```
+
+如果需要从 `SMILES` 生成 `CDX`，或使用 CDX 归一化/比例分析能力，还需要安装化学工具链：
+
+```bash
+python -m pip install -e ".[chem]"
+```
+
+Open Babel 可通过 Homebrew 或 conda 安装：
+
+```bash
+brew install open-babel
+# 或
+conda install -c conda-forge openbabel
+```
+
+安装后可用下面的命令确认系统里能找到 `obabel`：
+
+```bash
+obabel -V
+```
+
+## 测试
+
+```bash
+python -m pytest
+```
+
+测试夹具位于 `tests/fixtures/`。测试会写入临时目录，不需要使用仓库根目录下的
+`output/`、`Data/` 或 `sdfData/`。
+
+## 库 API
+
+库入口导出在 `retain_cdx` 包级别。最小用法如下：
+
+```python
+from retain_cdx import ExcelCDXWriter
+
+with ExcelCDXWriter("input.xlsx") as writer:
+    writer.insert_cdx("structure.cdx", sheet="Sheet1", cell="A1")
+    writer.save("output.xlsx")
+```
+
+批量插入时先构造 `StructureSource`，再调用 `insert_cdx_many`：
+
+```python
+from retain_cdx import ExcelCDXWriter, StructureSource
+
+sources = [
+    StructureSource.from_cdx("first.cdx"),
+    StructureSource.from_cdx("second.cdx"),
+]
+
+with ExcelCDXWriter("input.xlsx") as writer:
+    writer.insert_cdx_many(sources, sheet="Sheet1", start_cell="A1")
+    writer.save("output.xlsx")
+```
 
 ## 用法
 
-推荐用法（默认，直接使用内置 `template.xlsx`）：
+推荐用法（默认，直接使用内置模板）：
 
 ```bash
-python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
-```
-
-也可以直接运行模块入口：
-
-```bash
-python3 -m scripts.cli.inject_cdx_into_xlsx --cdx san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx --output output.xlsx
 ```
 
 显式指定模板：
 
 ```bash
-python3 inject_cdx_into_xlsx.py --template template.xlsx --cdx san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --template my_template.xlsx --cdx examples/san.cdx --output output.xlsx
 ```
 
 多行（每行一个 OLE，默认也走内置模板）：
 
 ```bash
-python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/1.cdx examples/2.cdx --output output_2rows.xlsx
 ```
 
 脚本会自动：
@@ -86,7 +153,7 @@ python3 inject_cdx_into_xlsx.py --cdx 1.cdx 2.cdx --output output_2rows.xlsx
 
 ### 位置与尺寸控制
 
-`inject_cdx_into_xlsx.py` 支持两类定位方式：
+`scripts.cli.inject_cdx_into_xlsx` 支持两类定位方式：
 
 1. 简单定位
    - `--col`
@@ -131,7 +198,7 @@ B2+0pt,40pt
 
 ```bash
 # 只移动到 A1/A2 附近，保持原始尺寸
-python3 inject_cdx_into_xlsx.py \
+python3 -m scripts.cli.inject_cdx_into_xlsx \
   --cdx sdfData/GDG906.cdx \
   --from A1+2mm,45pt \
   -o moved_only.xlsx
@@ -139,7 +206,7 @@ python3 inject_cdx_into_xlsx.py \
 
 ```bash
 # 强制定义一个新的显示框，会改变宽高
-python3 inject_cdx_into_xlsx.py \
+python3 -m scripts.cli.inject_cdx_into_xlsx \
   --cdx sdfData/GDG906.cdx \
   --from A1+5mm,20pt \
   --to A2+20mm,10pt \
@@ -165,7 +232,7 @@ OLE | 激发态 s1
 入口：
 
 ```bash
-python3 make_state_pair_layout.py --cdx sdfData/GDG906.cdx -o state_pair.xlsx
+python3 -m scripts.cli.make_state_pair_layout --cdx sdfData/GDG906.cdx -o state_pair.xlsx
 ```
 
 默认行为：
@@ -195,7 +262,7 @@ python3 make_state_pair_layout.py --cdx sdfData/GDG906.cdx -o state_pair.xlsx
 例子：
 
 ```bash
-python3 make_state_pair_layout.py \
+python3 -m scripts.cli.make_state_pair_layout \
   --cdx sdfData/GDG906.cdx \
   --top-label 基态 \
   --bottom-label 激发态\ s1 \
@@ -223,14 +290,15 @@ python3 make_state_pair_layout.py \
 
 说明：
 
-- 默认布局下，CLI 现在内部直接复用 `template.xlsx` 的稳定工作流。
+- 默认布局下，CLI 现在内部直接复用内置模板的稳定工作流。
 - 只有在显式传入定位参数（如 `--col`、`--start-row`、`--width`、`--height`、
   `--from`、`--to`）时，才会走从零构造 XLSX 骨架的路径。
 
 ## 限制
 
 - 模板必须由 Windows Excel + ChemDraw 插入生成。
-- 当前脚本假设模板结构类似 `template.xlsx`（简单一行一对象布局）。
+- 当前脚本假设模板结构类似内置的 `retain_cdx/data/template.xlsx`
+  （简单一行一对象布局）。
 - 当前项目默认只接受二进制 `CDX` 作为注入输入；`CDXML` 不能直接替代
   `--cdx` 参数。
 
@@ -250,7 +318,7 @@ python3 make_state_pair_layout.py \
 - 当前默认模式已经回到内置模板工作流；请直接使用：
 
 ```bash
-python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx --output output.xlsx
 ```
 
 **2) OLE 对象显示了，但双击打不开**
@@ -263,8 +331,8 @@ python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
 - 旧版本模板模式只会覆盖现有 `CONTENTS` 流，所以会报这个错误。
 - 当前版本在默认路径下会自动回退到“重建 OLE 容器”的方式处理大 `CDX`，
   不需要手工换更大的模板。
-- 如果你显式传了 `--template` 且模板结构比较特殊，仍建议优先用仓库内置
-  的 `template.xlsx` 先验证。
+- 如果你显式传了 `--template` 且模板结构比较特殊，仍建议优先用内置模板
+  （不传 `--template`）先验证。
 
 **4) 预览图没有更新**
 
@@ -278,7 +346,7 @@ python3 inject_cdx_into_xlsx.py --cdx san.cdx --output output.xlsx
 - 新矩形越偏离原始比例，视觉变形越明显。
 - 如果只是改位置，优先只传 `--from`。
 - 如果需要自动保持比例并尽量填满方形区域，优先用
-  `make_state_pair_layout.py --fill-ratio 0.9`。
+  `python3 -m scripts.cli.make_state_pair_layout --fill-ratio 0.9`。
 
 **6) 手头只有 `.sdf` 或 `.cdxml`，没有 `.cdx`**
 

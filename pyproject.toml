@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "retain-cdx"
+version = "0.0.8"
+description = "Insert editable ChemDraw CDX OLE objects into Excel workbooks."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "olefile",
+]
+
+[project.optional-dependencies]
+image = [
+    "Pillow",
+]
+dev = [
+    "Pillow",
+    "pytest",
+]
+chem = [
+    "pycdxml",
+    "rdkit",
+]
+
+[tool.setuptools.packages.find]
+include = ["retain_cdx*"]

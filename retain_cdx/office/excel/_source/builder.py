@@ -30,6 +30,10 @@ def build_source_workbook(
             preview_height=plan.preview_height,
             preview_thick_lines=plan.preview_thick_lines,
             preview_no_margin=plan.preview_no_margin,
+            preview_format=plan.preview_format,
+            preview_mono=plan.preview_mono,
+            preview_backend=plan.preview_backend,
+            preview_style=plan.preview_style,
         )
         return
 
@@ -47,4 +51,8 @@ def build_source_workbook(
         preview_height=plan.preview_height,
         preview_thick_lines=plan.preview_thick_lines,
         preview_no_margin=plan.preview_no_margin,
+        preview_format=plan.preview_format,
+        preview_mono=plan.preview_mono,
+        preview_backend=plan.preview_backend,
+        preview_style=plan.preview_style,
     )

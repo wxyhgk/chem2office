@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
 from retain_cdx.structure import StructureSource
 
 from retain_cdx.office.excel._utils import parse_cell, px_to_points
@@ -22,6 +23,10 @@ class InsertPlan:
     preview_height: int | None
     preview_thick_lines: bool
     preview_no_margin: bool
+    preview_format: PreviewFormat
+    preview_mono: bool
+    preview_backend: PreviewBackend
+    preview_style: PreviewStyle
     normalize_cdx: bool
     normalize_margin: float
     normalize_fill_ratio: float
@@ -55,6 +60,10 @@ def build_insert_plan(
     normalize_margin: float,
     normalize_fill_ratio: float,
     preserve_aspect: bool,
+    preview_format: PreviewFormat = "png",
+    preview_mono: bool = True,
+    preview_backend: PreviewBackend = "auto",
+    preview_style: PreviewStyle = "acs1996",
 ) -> InsertPlan:
     if placement is None:
         placement = Placement(start_cell)
@@ -72,6 +81,10 @@ def build_insert_plan(
         preview_height = display.preview.height
         preview_thick_lines = display.preview.thick_lines
         preview_no_margin = display.preview.no_margin
+        preview_format = display.preview.format
+        preview_mono = display.preview.mono
+        preview_backend = display.preview.backend
+        preview_style = display.preview.style
         normalize_cdx = display.normalize_cdx
         normalize_margin = display.normalize_margin
         normalize_fill_ratio = display.normalize_fill_ratio
@@ -103,6 +116,10 @@ def build_insert_plan(
         preview_height=preview_height,
         preview_thick_lines=preview_thick_lines,
         preview_no_margin=preview_no_margin,
+        preview_format=preview_format,
+        preview_mono=preview_mono,
+        preview_backend=preview_backend,
+        preview_style=preview_style,
         normalize_cdx=normalize_cdx,
         normalize_margin=normalize_margin,
         normalize_fill_ratio=normalize_fill_ratio,

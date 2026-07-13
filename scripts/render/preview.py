@@ -14,6 +14,7 @@ def render_png(
     thick_lines: bool = False,
     no_margin: bool = False,
     no_title: bool = True,
+    mono: bool = True,
 ) -> None:
     cmd = ["obabel", "-icdx", str(cdx_path), "-opng", "-O", str(png_path)]
     if image_size is not None:
@@ -28,6 +29,8 @@ def render_png(
         cmd.append("-xm")
     if no_title:
         cmd.append("-xd")
+    if mono:
+        cmd.extend(["-xu", "-xU"])
 
     proc = subprocess.run(
         cmd,

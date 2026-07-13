@@ -46,14 +46,16 @@ def touch_sheet_layout(
         if cols is None:
             cols = ET.Element(f"{{{NS_MAIN}}}cols")
             root.insert(list(root).index(sheet_data), cols)
-        ET.SubElement(
-            cols,
-            f"{{{NS_MAIN}}}col",
-            min=str(col),
-            max=str(col),
-            width=str(col_width),
-            customWidth="1",
-        )
+        col_element = _find_exact_col(cols, col)
+        if col_element is None:
+            col_element = ET.SubElement(
+                cols,
+                f"{{{NS_MAIN}}}col",
+                min=str(col),
+                max=str(col),
+            )
+        col_element.set("width", str(col_width))
+        col_element.set("customWidth", "1")
 
     if row_height is not None:
         sheet_data = root.find("s:sheetData", NS)
@@ -90,6 +92,13 @@ def _replace_or_remove_child(target_root: ET.Element, source_root: ET.Element, t
     else:
         insert_pos = len(target_root)
     target_root.insert(insert_pos, ET.fromstring(ET.tostring(source_child)))
+
+
+def _find_exact_col(cols: ET.Element, col: int) -> ET.Element | None:
+    for col_element in cols.findall("s:col", NS):
+        if col_element.get("min") == str(col) and col_element.get("max") == str(col):
+            return col_element
+    return None
 
 
 def _replace_sheet_rows(source_root: ET.Element, target_root: ET.Element) -> None:

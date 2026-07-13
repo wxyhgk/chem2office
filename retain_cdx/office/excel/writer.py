@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
+from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
 from retain_cdx.structure import StructureSource
 from retain_cdx.office.excel._insert import build_insert_plan, execute_insert
 from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
@@ -48,6 +50,10 @@ class ExcelCDXWriter:
         preview_height: int | None = None,
         preview_thick_lines: bool = False,
         preview_no_margin: bool = False,
+        preview_format: PreviewFormat = "png",
+        preview_mono: bool = True,
+        preview_backend: PreviewBackend = "auto",
+        preview_style: PreviewStyle = "acs1996",
         normalize_cdx: bool = False,
         normalize_margin: float = 18,
         normalize_fill_ratio: float = 0.8,
@@ -78,6 +84,10 @@ class ExcelCDXWriter:
             preview_height=preview_height,
             preview_thick_lines=preview_thick_lines,
             preview_no_margin=preview_no_margin,
+            preview_format=preview_format,
+            preview_mono=preview_mono,
+            preview_backend=preview_backend,
+            preview_style=preview_style,
             normalize_cdx=normalize_cdx,
             normalize_margin=normalize_margin,
             normalize_fill_ratio=normalize_fill_ratio,
@@ -86,7 +96,7 @@ class ExcelCDXWriter:
 
     def insert_cdx_many(
         self,
-        sources: list[StructureSource],
+        sources: Iterable[StructureSource | str | Path],
         *,
         sheet: str,
         start_cell: str,
@@ -101,17 +111,27 @@ class ExcelCDXWriter:
         preview_height: int | None = None,
         preview_thick_lines: bool = False,
         preview_no_margin: bool = False,
+        preview_format: PreviewFormat = "png",
+        preview_mono: bool = True,
+        preview_backend: PreviewBackend = "auto",
+        preview_style: PreviewStyle = "acs1996",
         normalize_cdx: bool = False,
         normalize_margin: float = 18,
         normalize_fill_ratio: float = 0.8,
         preserve_aspect: bool = False,
     ) -> None:
         """Insert CDX objects vertically starting at *start_cell*."""
-        if not sources:
+        cdx_sources = [
+            source
+            if isinstance(source, StructureSource)
+            else StructureSource.from_cdx(source)
+            for source in sources
+        ]
+        if not cdx_sources:
             return
 
         plan = build_insert_plan(
-            sources,
+            cdx_sources,
             start_cell=start_cell,
             placement=placement,
             display=display,
@@ -124,9 +144,13 @@ class ExcelCDXWriter:
             preview_height=preview_height,
             preview_thick_lines=preview_thick_lines,
             preview_no_margin=preview_no_margin,
+            preview_format=preview_format,
+            preview_mono=preview_mono,
+            preview_backend=preview_backend,
+            preview_style=preview_style,
             normalize_cdx=normalize_cdx,
             normalize_margin=normalize_margin,
             normalize_fill_ratio=normalize_fill_ratio,
             preserve_aspect=preserve_aspect,
         )
-        execute_insert(self.package_dir, sources, sheet=sheet, plan=plan)
+        execute_insert(self.package_dir, cdx_sources, sheet=sheet, plan=plan)

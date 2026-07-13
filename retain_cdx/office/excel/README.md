@@ -100,12 +100,13 @@ source workbook 是一个中间 `.xlsx`，里面已经包含要合并的 OLE 对
 
 - `preview.py`
   处理 shell 的预览图同步：
-  - 用 Open Babel 生成 PNG
-  - 裁剪白边
-  - 按 OLE 显示框比例生成“不变形优先”的预览图
+  - 默认预览后端：`RDKit ACS1996`（黑白期刊风格；CDX 经 pycdxml→CDXML 解析）
+  - 回退：Open Babel CLI（`-xu`/`-xU` 黑白）
+  - 可选 `preview_format="emf"`：SVG + Inkscape → EMF
+  - PNG 路径会裁剪白边，并按 OLE 显示框比例生成“不变形优先”的预览图
   - 同步 worksheet relationship 和 VML relationship
 
-注意：macOS/Linux 下目前不生成 ChemDraw 原生 EMF 预览。
+注意：RDKit 路径需 `.[chem]`（rdkit + pycdxml）。EMF 仍需 Inkscape。
 
 ### `_parts/`
 
@@ -205,6 +206,7 @@ from retain_cdx.office.excel._ooxml.workbook import parse_workbook_sheets
 
 - shell 模式目前一次只支持插入一个 CDX 对象。
 - 稳定路径依赖原生 Excel/ChemDraw OLE shell。
-- macOS/Linux 目前无法本地生成 ChemDraw 风格的 EMF 预览，因此默认使用 PNG。
-- 双击 OLE 打开 ChemDraw 后，Excel/ChemDraw 可能会重新生成 EMF 预览。
-  CDX 内容不会变，但预览图位置和我们生成的 PNG 可能不同。
+- 预览默认 PNG + RDKit ACS1996；`preview_backend="obabel"` 可强制 Open Babel。
+- `preview_format="emf"` 需要 Inkscape；`preview_format="auto"` 有 Inkscape 时用 EMF。
+- 双击 OLE 打开 ChemDraw 后，Excel/ChemDraw 可能会重新生成预览。
+  CDX 内容不会变，但预览风格可能与 RDKit ACS 示意仍有差异。

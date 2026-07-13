@@ -10,6 +10,10 @@ def ensure_png_content_type(ct_path: Path) -> None:
     ensure_content_type_defaults(ct_path, {"png": "image/png"})
 
 
+def ensure_emf_content_type(ct_path: Path) -> None:
+    ensure_content_type_defaults(ct_path, {"emf": "image/x-emf"})
+
+
 def ensure_content_type_defaults(ct_path: Path, defaults: dict[str, str]) -> None:
     if not ct_path.exists():
         return
