@@ -12,6 +12,7 @@ from .preview import (
     pycdxml_available,
     rdkit_available,
     render_emf,
+    render_emf_many,
     render_mol_png,
     render_mol_svg,
     render_png,
@@ -19,6 +20,7 @@ from .preview import (
     render_svg,
     resolve_preview_backend,
     resolve_preview_format,
+    svg_to_emf_batch,
 )
 
 __all__ = [
@@ -33,6 +35,7 @@ __all__ = [
     "pycdxml_available",
     "rdkit_available",
     "render_emf",
+    "render_emf_many",
     "render_mol_png",
     "render_mol_svg",
     "render_png",
@@ -40,4 +43,5 @@ __all__ = [
     "render_svg",
     "resolve_preview_backend",
     "resolve_preview_format",
+    "svg_to_emf_batch",
 ]

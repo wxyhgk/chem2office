@@ -2,127 +2,164 @@
 
 这个目录负责把可编辑的 ChemDraw CDX OLE 对象写入 `.xlsx` 文件。
 
-目前最稳定的路径是 **shell 模板路径**：
+概念上两步：**造零件**（bin + 预览，可外置）→ **装进 Excel**（本目录主责）。  
+实现上仍是：计划 → 临时 source 小表 → merge 进目标 package。
 
-1. 复用一个由 Excel + ChemDraw 原生创建的 OLE shell workbook。
-2. 替换 OLE 容器里的 CDX `CONTENTS` 流。
-3. 同步 Excel 表面显示用的预览图。
-4. 把这个 source workbook 里的 OLE / drawing / VML / media parts 合并到目标 workbook。
+## Public API vs `_` 内部（契约对照）
 
-## 对外 API
+带 `_` 的包是**工业包常见的内部实现标记**：可随时重构路径与文件，**不保证** import 稳定。  
+请只依赖下表「大门」一侧。
 
-### `__init__.py`
+| 层级 | 可依赖？ | 符号 / 路径 | 说明 |
+|------|----------|-------------|------|
+| **大门 Public** | ✅ 稳定 | `retain_cdx.ExcelCDXWriter` | 写 workbook 的唯一推荐入口 |
+| | ✅ | `Placement`, `PreviewOptions`, `DisplayOptions`, `ShellTemplate` | 用户配置 |
+| | ✅ | `retain_cdx.StructureSource` | 化学结构（excel 外的领域对象） |
+| **员工通道 Internal** | ⚠️ 勿当 API | `office/excel/models.py` | 内部 DTO（`PreviewSpec` / `SourceBuildRequest`…） |
+| | ⚠️ | `_insert/` | 编排：plan → CDX → source → merge |
+| | ⚠️ | `_source/` | 临时 source.xlsx 组装（generated / shell） |
+| | ⚠️ | `_source/template/` | generated 模板的 XML 细节抽屉 |
+| | ⚠️ | `_parts/` | source → 目标 package 的 merge |
+| | ⚠️ | `_shell/` | 原生 ChemDraw shell 几何/预览 |
+| | ⚠️ | `_ooxml/` / `_utils/` | ZIP/XML/单位底层 |
 
-Excel 模块的对外出口。这里应该只暴露稳定 public API，不要把内部工具都挂出去。
+```text
+用户代码
+   │  只应 import 大门
+   ▼
+writer + options          ← public
+   │
+   ▼
+_insert  →  _source  →  _parts   ← _ 内部（装进 Excel）
+              │            │
+         template/      surface/rels
+         (XML 细节)     (merge 细节)
+```
 
-当前主要导出：
+**semver 含义**：改 public 签名要谨慎；改 `_` 包 / `models` 只要测试绿、public 行为不变即可。
 
-- `ExcelCDXWriter`
-- `Placement`
-- `PreviewOptions`
-- `DisplayOptions`
-- `ShellTemplate`
+### `__init__.py` / `writer.py` / `options.py`
 
-### `writer.py`
+- `__init__.py` — 只 re-export public 符号  
+- `writer.py` — 薄门面：计划 → 执行 → save；另提供
+  `set_cell_text(s)` / `set_column_width` / `set_row_height`
+  （写结构旁边的 ID/表头等文本、调格子尺寸，
+  **不要**用 openpyxl 后处理 —— 它会丢 OLE parts）  
+- `insert_pictures_many()` — **图片模式**：只放图不放 OLE（见下）  
 
-用户真正调用的 workbook writer。
+### 图片模式 `_picture.py`
 
-它应该保持轻量，只负责串联流程：
+`insert_pictures_many()` 与 OLE 路径并列：媒体 + drawing 的 `xdr:pic` 锚点，
+不产生 embeddings / VML / oleObjects。上千个 OLE 对象会拖垮 Excel（每个都带
+CFBF 容器、VML 形状和激活机制），图片则很轻，单表可装几千个结构。
+代价：不能双击进 ChemDraw 编辑。锚点按目标 sheet 真实网格计算
+（复用 `_shell/grid.py` 的 `ExcelGridMetrics`），目标已有 drawing 时追加进去。
+- `options.py` — 用户可见 dataclass  
 
-1. 生成插入计划。
-2. 准备临时 CDX 文件。
-3. 构建 source workbook。
-4. 合并 source workbook 到目标 workbook。
-5. 修正 layout / content types。
-
-不要在这里继续堆预览图、VML、relationship、OLE 二进制细节。
-
-### `options.py`
-
-用户可见的配置 dataclass：
-
-- `Placement`
-- `PreviewOptions`
-- `DisplayOptions`
-- `ShellTemplate`
-
-这些类型属于 public API，后续改动要谨慎。
+不要在 `writer` 里堆预览、VML、OLE 二进制细节。
 
 ## 内部子包
 
-带 `_` 前缀的目录都是内部实现，不建议用户直接 import。内部重构可以改这些路径，但不要影响 public API。
+### 依赖方向（硬规则）
+
+```text
+writer → _insert (pipeline) → _source / _parts
+                ↘ models ↙
+_source 与 _parts 不得 import _insert。
+```
+
+`models.py`（无 `_` 前缀，**仍是内部**）：
+
+- `PreviewSpec` / `LayoutSpec` / `NormalizeSpec` / `ShellSourceOptions` / `SourceBuildRequest`
+
+`InsertPlan`（`_insert/plan.py`）组合上述 spec，并提供 `to_source_request()`。
 
 ### `_insert/`
 
-负责把用户传入的参数转成明确的插入输入。
+编排层：把用户参数变成计划并执行插入。
 
-- `plan.py`
-  构建 `InsertPlan`，统一处理：
-  - placement
-  - display
-  - shell
-  - preview
-  - normalize
-  - width / height / row height / column width
+- `plan.py` — 构建 `InsertPlan`
+- `cdx.py` — `StructureSource` → 临时 `.cdx`（含 optional normalize）
+- `executor.py` — 写 CDX → 建 source → merge → 修正 layout / content types
 
-- `cdx.py`
-  把 `StructureSource` 写成临时 `.cdx` 文件。
-  如果用户要求 normalize，也在这里处理。
+### `_source/` — 在临时小表里先装齐 OLE（merge 之前）
 
-### `_source/`
+**角色**：产出 `source.xlsx`，里面已经自洽地含有 `.bin` + 预览 + drawing/vml/oleObjects。  
+随后由 `_parts` merge 进用户目标表。  
+（化学格式转换在更外层；这里从 CDX 路径开始。）
 
-负责创建临时 source workbook。
+```text
+CDX 列表 + SourceBuildRequest
+        │
+        ▼  builder（shell? → shell 路径 : generated 路径）
+source.xlsx  ──merge──►  目标 package
+```
 
-source workbook 是一个中间 `.xlsx`，里面已经包含要合并的 OLE 对象。
+#### Generated 路径子步骤
 
-- `builder.py`
-  根据是否使用 shell 选择构建路径：
-  - shell 模式
-  - 非 shell/generated 模式
+| 子步骤 | 做什么 | 模块 |
+|--------|--------|------|
+| 几何 | 每行固定框 anchors | `anchors.py` |
+| B 落盘 | 克隆 OLE 壳、写 CDX、渲染预览 | `fill_parts.py` |
+| C–F | rels + drawing/vml + oleObjects + content types | `wire_surface.py` + `template/` |
+| 编排 | 解包模板 → B → C–F → 打包 | `generated.py` |
 
-- `workbook.py`
-  具体创建 source workbook。
-  shell 模式会：
-  - 解包 shell workbook
-  - 替换 OLE `CONTENTS`
-  - 更新预览图
-  - 必要时 patch shell 几何
-  - 重新打包成 source workbook
+- `builder.py` — 只认 `SourceBuildRequest`，分发 shell / generated  
+- `workbook.py` — shell 组装；generated 转调 `generated.py`  
+- `fill_parts.py` — **B** embeddings + media  
+- `wire_surface.py` — **C–F** 接线与表面 XML  
+- `template/` — generated 模板 XML 细节（common / namespaces / objects / sheet / vml / xml）  
+- `anchors.py` — 两格锚点计算  
 
-### `_shell/`
+### `_shell/` — 原生 ChemDraw OLE shell（单对象 source）
 
-负责 Excel/ChemDraw 原生 shell 相关细节。
+与 generated 的 B–D 对齐，但改的是「真·Excel+ChemDraw」模板：
 
-- `geometry.py`
-  处理 shell 的显示框和 anchor：
-  - 读取 VML 里的宽高
-  - 在允许 resize 时 patch worksheet / drawing / VML geometry
+| 子步骤 | 做什么 | 模块 |
+|--------|--------|------|
+| B | 渲染预览写入 `xl/media` | `preview.py` |
+| C | 更新 vml/sheet image rels | `media_rels.py` |
+| D | 框贴合分子 / 挪格 / 改大小 | `geometry.py` |
+| chrome | 去黑边框 | `chrome.py` |
 
-- `preview.py`
-  处理 shell 的预览图同步：
-  - 默认预览后端：`RDKit ACS1996`（黑白期刊风格；CDX 经 pycdxml→CDXML 解析）
-  - 回退：Open Babel CLI（`-xu`/`-xU` 黑白）
-  - 可选 `preview_format="emf"`：SVG + Inkscape → EMF
-  - PNG 路径会裁剪白边，并按 OLE 显示框比例生成“不变形优先”的预览图
-  - 同步 worksheet relationship 和 VML relationship
+- `preview.py` — `replace_shell_preview`（**仅** B+C：画预览 + 改 image rels）  
+- `geometry.py` — `tighten_shell_display_box`、`patch_shell_geometry`（`read_vml_size_px` 定义在 `vml.py`）  
+- `chrome.py` — 仅 `remove_shell_ole_border`  
+- `media_rels.py` — image rId / Target  
+- 底层：`model` / `grid` / `vml` / `ooxml_patch`  
+
+**Shell 路径的编排在 `_source/workbook.py`**（顺序显式）：  
+B 写 bin → D' tighten → chrome → B+C 预览 → D 挪格 → chrome → pack。
 
 注意：RDKit 路径需 `.[chem]`（rdkit + pycdxml）。EMF 仍需 Inkscape。
 
-### `_parts/`
+### `_parts/` — 「装进 Excel」（当前实现）
 
-负责把 source workbook 里的 parts 合并到目标 workbook。
+**概念上**这一步只做一件事：把已有的 `.bin` + 预览图装进目标 xlsx。  
+**实现上**零件先在临时 source 工作簿里装齐，再 merge 进目标 package（不负责 CDX/预览生成）。
 
-- `ole.py`
-  处理：
-  - drawing part 复制
-  - VML part 复制
-  - OLE embedding 复制
-  - media 复制
-  - relationship 重写
-  - `oleObjects` 挂到目标 worksheet
-  - shell layout 复制
+```text
+source.xlsx（已含 bin + 图 + drawing/vml/oleObjects）
+        │
+        ▼  merge_source_workbook
+目标 package_dir
+```
 
-这个模块只负责合并 parts，不负责生成 CDX，也不负责渲染预览图。
+子步骤与文件：
+
+| 子步骤 | 做什么 | 模块 |
+|--------|--------|------|
+| B 落盘零件 | 拷 `embeddings/*.bin`、`media/*` | `context.py` |
+| C 接线 | sheet/vml `.rels` 分配 rId | `context.py` |
+| D 钉框 | 合并 drawing.xml / vmlDrawing.vml | `surface.py` |
+| E 挂 OLE | 改 shapeId；`attach_ole_objects`（`_ooxml/worksheet.py`） | `ole_objects.py` + `merge.py` |
+| 编排 | 串起上面顺序 | `merge.py` |
+
+- `merge.py` — 唯一入口 `merge_source_workbook`
+- `context.py` — 目标目录、拷贝 bin/media、写 rels
+- `surface.py` — drawing / VML / shapeId
+- `ole_objects.py` — worksheet `<oleObjects>` 辅助
+- `util.py` — rid / 文件名 / xml 小工具
 
 ### `_ooxml/`
 

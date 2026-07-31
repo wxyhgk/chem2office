@@ -4,8 +4,8 @@ import copy
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from .anchors import OleAnchor
-from .template_namespaces import NS
+from ..anchors import OleAnchor
+from .namespaces import NS
 
 
 def update_vml(

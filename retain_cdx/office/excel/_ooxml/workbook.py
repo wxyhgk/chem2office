@@ -5,23 +5,17 @@ import posixpath
 import re
 import xml.etree.ElementTree as ET
 
-
-REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
-NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-
-NS = {
-    "s": NS_MAIN,
-    "r": NS_R,
-}
+from .relationships import read_rels
+from .xml_io import NS, NS_R
 
 
 def parse_workbook_sheets(package_dir: Path) -> dict[str, str]:
     wb_root = ET.parse(package_dir / "xl" / "workbook.xml").getroot()
-    rel_root = ET.parse(package_dir / "xl" / "_rels" / "workbook.xml.rels").getroot()
     rels = {
-        rel.get("Id"): rel.get("Target")
-        for rel in rel_root.findall(f"{{{REL_NS}}}Relationship")
+        rid: target
+        for rid, _, target in read_rels(
+            package_dir / "xl" / "_rels" / "workbook.xml.rels"
+        )
     }
     sheets: dict[str, str] = {}
     for sheet in wb_root.findall("s:sheets/s:sheet", NS):

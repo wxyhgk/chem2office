@@ -6,7 +6,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 import retain_cdx.office.excel._shell.preview as shell_preview
-import retain_cdx.office.excel._source.generated as generated_source
+import retain_cdx.office.excel._source.fill_parts as fill_parts
 from retain_cdx import ExcelCDXWriter, ShellTemplate, StructureSource
 from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
 from retain_cdx.render.preview import inkscape_available, resolve_preview_format
@@ -58,14 +58,36 @@ def write_placeholder_preview(cdx_path: Path, output_path: Path, **kwargs) -> st
     return "png"
 
 
+def write_placeholder_emf_many(jobs, **kwargs) -> list[str]:
+    used: list[str] = []
+    for cdx_path, emf_path in jobs:
+        used.append(write_placeholder_preview(cdx_path, emf_path, format="emf"))
+    return used
+
+
 def patch_preview_renderers(monkeypatch) -> None:
-    monkeypatch.setattr(generated_source, "render_preview", write_placeholder_preview)
+    # Generated path renders via fill_parts; shell path via _shell.preview.
+    monkeypatch.setattr(fill_parts, "render_preview", write_placeholder_preview)
+    monkeypatch.setattr(fill_parts, "render_emf_many", write_placeholder_emf_many)
     monkeypatch.setattr(shell_preview, "render_preview", write_placeholder_preview)
 
 
 def force_inkscape_available(monkeypatch, available: bool = True) -> None:
-    monkeypatch.setattr(generated_source, "preview_extension", lambda fmt: "emf" if _wants_emf(fmt, available) else "png")
-    monkeypatch.setattr(shell_preview, "preview_extension", lambda fmt: "emf" if _wants_emf(fmt, available) else "png")
+    monkeypatch.setattr(
+        fill_parts,
+        "preview_extension",
+        lambda fmt: "emf" if _wants_emf(fmt, available) else "png",
+    )
+    monkeypatch.setattr(
+        fill_parts,
+        "resolve_preview_format",
+        lambda fmt: "emf" if _wants_emf(fmt, available) else "png",
+    )
+    monkeypatch.setattr(
+        shell_preview,
+        "preview_extension",
+        lambda fmt: "emf" if _wants_emf(fmt, available) else "png",
+    )
     monkeypatch.setattr(
         "retain_cdx.render.preview.inkscape_available",
         lambda: available,
@@ -206,6 +228,35 @@ def test_generated_insert_path_creates_ole_and_preview(
         assert "xl/media/sheet1_retain_image1.png" in names
         assert "xl/drawings/sheet1_retain_drawing.xml" in names
         assert "xl/drawings/sheet1_retain_vmlDrawing.vml" in names
+
+
+def test_object_pr_pins_box_size_on_both_paths(tmp_path: Path, monkeypatch) -> None:
+    """objectPr must carry autoPict="0"/defaultSize="0".
+
+    Without autoPict="0" the spec default (true) tells Excel to size each object
+    from its preview image — wrong for supersampled previews and expensive when
+    a sheet holds thousands of objects.
+    """
+    patch_preview_renderers(monkeypatch)
+
+    for name, kwargs in (
+        ("generated.xlsx", {}),
+        ("shell.xlsx", {"shell": ShellTemplate("tests/fixtures/shell_large.xlsx")}),
+    ):
+        output = tmp_path / name
+        with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+            writer.insert_cdx(
+                Path("tests/fixtures/test.cdx"), sheet="Sheet1", cell="A1", **kwargs
+            )
+            writer.save(output)
+
+        with zipfile.ZipFile(output) as z:
+            root = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+        object_prs = root.findall(".//{%s}objectPr" % NS_MAIN)
+        assert object_prs, f"{name}: no objectPr found"
+        for object_pr in object_prs:
+            assert object_pr.get("autoPict") == "0", name
+            assert object_pr.get("defaultSize") == "0", name
 
 
 def test_generated_insert_many_creates_multiple_objects(
@@ -597,6 +648,22 @@ def test_render_emf_real_pipeline(tmp_path: Path) -> None:
     assert emf_path.exists()
     assert emf_path.stat().st_size > 100
     assert emf_path.read_bytes()[40:44] == b" EMF" or emf_path.read_bytes()[:4] == b"\x01\x00\x00\x00"
+
+
+@pytest.mark.skipif(not inkscape_available(), reason="Inkscape not installed")
+def test_svg_to_emf_batch_shell(tmp_path: Path) -> None:
+    from retain_cdx.render.preview import render_svg, svg_to_emf_batch
+
+    cdx = Path("tests/fixtures/test.cdx")
+    pairs = []
+    for i in range(3):
+        svg = tmp_path / f"m{i}.svg"
+        emf = tmp_path / f"m{i}.emf"
+        render_svg(cdx, svg, backend="auto", style="acs1996", mono=True)
+        pairs.append((svg, emf))
+    svg_to_emf_batch(pairs, chunk_size=2)
+    for _, emf in pairs:
+        assert emf.exists() and emf.stat().st_size > 100
 
 
 def test_render_png_defaults_to_monochrome(tmp_path: Path) -> None:

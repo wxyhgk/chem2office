@@ -10,11 +10,35 @@ from ._utils import parse_px
 
 @dataclass(frozen=True)
 class Placement:
-    """Top-left cell and optional in-cell offset."""
+    """Anchor placement: top-left cell + offset, plus optional second anchor.
+
+    单锚点（默认）：``cell`` (+ ``offset_x``/``offset_y``) 只定左上角，
+    显示框大小由 ``width_px``/``height_px`` 或 ``DisplayOptions`` 决定。
+
+    两点锚（two-point anchor）：设置 ``to_cell`` 后，显示框从
+    ``cell + offset`` 一直延伸到 ``to_cell + to_offset``。``to_cell`` 指该
+    单元格的**左上角**（与 OOXML twoCellAnchor 的 ``to`` 语义一致），
+    跨度按目标 sheet 的真实列宽/行高解析（未显式设置的列/行用 Excel
+    默认 64px/19px）。
+
+    Size precedence / 尺寸优先级::
+
+        to_cell（两点锚，网格解析）
+          > DisplayOptions.width/height
+          > width_px/height_px 参数
+
+    两点锚模式下不会再调整目标表的行高/列宽（框由现有网格本身定义）。
+    Offsets accept numbers (px) or strings with px/pt/in/mm units,
+    parsed via :func:`parse_px`.
+    """
 
     cell: str
     offset_x: int | float | str = 0
     offset_y: int | float | str = 0
+    # Optional second anchor (bottom-right corner of the display box).
+    to_cell: str | None = None
+    to_offset_x: int | float | str = 0
+    to_offset_y: int | float | str = 0
 
     @property
     def offset_x_px(self) -> int:
@@ -23,6 +47,14 @@ class Placement:
     @property
     def offset_y_px(self) -> int:
         return parse_px(self.offset_y)
+
+    @property
+    def to_offset_x_px(self) -> int:
+        return parse_px(self.to_offset_x)
+
+    @property
+    def to_offset_y_px(self) -> int:
+        return parse_px(self.to_offset_y)
 
 
 @dataclass(frozen=True)

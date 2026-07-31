@@ -1,9 +1,14 @@
+"""Dispatch a neutral ``SourceBuildRequest`` to the shell or generated path.
+
+builder 只认 ``SourceBuildRequest``（不 import plan）：有 shell 走 shell 路径，
+否则走 generated 路径；具体组装在 ``workbook.py``。
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from retain_cdx.office.excel._insert.plan import InsertPlan
-from retain_cdx.office.excel._utils import index_to_col
+from retain_cdx.office.excel.models import SourceBuildRequest
 
 from .workbook import build_source_ole_workbook, build_source_workbook_from_shell
 
@@ -11,48 +16,25 @@ from .workbook import build_source_ole_workbook, build_source_workbook_from_shel
 def build_source_workbook(
     cdx_paths: list[Path],
     output_xlsx: Path,
-    plan: InsertPlan,
+    request: SourceBuildRequest,
 ) -> None:
-    if plan.shell_path is not None:
+    """Build a temporary source workbook from a neutral request (no plan import)."""
+    if request.shell is not None:
         build_source_workbook_from_shell(
             cdx_paths[0],
-            plan.shell_path,
             output_xlsx,
-            start_col=plan.col if plan.shell_allow_resize else None,
-            start_row=plan.row if plan.shell_allow_resize else None,
-            offset_x_px=plan.placement.offset_x_px,
-            offset_y_px=plan.placement.offset_y_px,
-            width_px=plan.width_px if plan.shell_resize_display else None,
-            height_px=plan.height_px if plan.shell_resize_display else None,
-            preserve_aspect=plan.shell_preserve_aspect,
-            fit_cdx=plan.shell_fit_cdx,
-            preview_width=plan.preview_width,
-            preview_height=plan.preview_height,
-            preview_thick_lines=plan.preview_thick_lines,
-            preview_no_margin=plan.preview_no_margin,
-            preview_format=plan.preview_format,
-            preview_mono=plan.preview_mono,
-            preview_backend=plan.preview_backend,
-            preview_style=plan.preview_style,
+            layout=request.layout,
+            shell=request.shell,
+            preview=request.preview,
         )
         return
+
+    if request.layout.row_height is None:
+        raise ValueError("SourceBuildRequest.layout.row_height is required without a shell.")
 
     build_source_ole_workbook(
         cdx_paths,
         output_xlsx,
-        col_letter=index_to_col(plan.col),
-        start_row=plan.row,
-        offset_x_px=plan.placement.offset_x_px,
-        offset_y_px=plan.placement.offset_y_px,
-        width_px=plan.width_px,
-        height_px=plan.height_px,
-        row_height=plan.row_height,
-        preview_width=plan.preview_width,
-        preview_height=plan.preview_height,
-        preview_thick_lines=plan.preview_thick_lines,
-        preview_no_margin=plan.preview_no_margin,
-        preview_format=plan.preview_format,
-        preview_mono=plan.preview_mono,
-        preview_backend=plan.preview_backend,
-        preview_style=plan.preview_style,
+        layout=request.layout,
+        preview=request.preview,
     )

@@ -4,8 +4,7 @@ import copy
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from .anchors import AnchorPoint, OleAnchor
-from .template_namespaces import (
+from .namespaces import (
     NS,
     NS_MAIN,
     NS_X14AC,
@@ -32,36 +31,6 @@ def extract_base_anchor(sheet_path: Path) -> tuple[int, int, int]:
     from_row = int(obj_pr.find("s:from/xdr:row", NS).text)  # type: ignore[union-attr]
     to_row = int(obj_pr.find("s:to/xdr:row", NS).text)  # type: ignore[union-attr]
     return base_shape_id, from_row, to_row
-
-
-def extract_base_ole_anchor(sheet_path: Path) -> OleAnchor:
-    tree = ET.parse(sheet_path)
-    root = tree.getroot()
-    base_alt = root.find("s:oleObjects/mc:AlternateContent", NS)
-    if base_alt is None:
-        raise SystemExit("base OLE object not found in sheet1.xml")
-    base_choice = base_alt.find("mc:Choice", NS)
-    if base_choice is None:
-        raise SystemExit("base OLE choice not found in sheet1.xml")
-    base_ole = base_choice.find("s:oleObject", NS)
-    if base_ole is None:
-        raise SystemExit("base OLE element not found in sheet1.xml")
-    anchor = base_ole.find("s:objectPr/s:anchor", NS)
-    if anchor is None:
-        raise SystemExit("base OLE anchor not found in sheet1.xml")
-
-    def read_corner(name: str) -> AnchorPoint:
-        corner = anchor.find(f"s:{name}", NS)
-        if corner is None:
-            raise SystemExit(f"anchor corner not found: {name}")
-        return AnchorPoint(
-            col=int(corner.find("xdr:col", NS).text),  # type: ignore[union-attr]
-            col_off=int(corner.find("xdr:colOff", NS).text),  # type: ignore[union-attr]
-            row=int(corner.find("xdr:row", NS).text),  # type: ignore[union-attr]
-            row_off=int(corner.find("xdr:rowOff", NS).text),  # type: ignore[union-attr]
-        )
-
-    return OleAnchor(from_pt=read_corner("from"), to_pt=read_corner("to"))
 
 
 def update_sheet_labels(

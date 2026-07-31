@@ -15,7 +15,7 @@ _NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 def excel_col_width_to_px(width: float) -> int:
     """Approximate Excel column width (character units) → pixels."""
-    # Same convention used elsewhere in this repo (template_vml).
+    # Same convention used elsewhere in this repo (_source/template/vml.py).
     return max(1, int(width * 7 + 5))
 
 
@@ -105,11 +105,19 @@ class ExcelGridMetrics:
             to=AnchorCorner(to_col, to_col_off_px, to_row, to_row_off_px),
         )
 
+    def cell_origin_x_px(self, col: int) -> int:
+        """Absolute x (px) of the left edge of 0-based column *col*."""
+        return sum(self.col_width_px(idx) for idx in range(col))
+
+    def cell_origin_y_px(self, row: int) -> int:
+        """Absolute y (px) of the top edge of 0-based row *row*."""
+        return sum(self.row_height_px(idx) for idx in range(row))
+
     def absolute_x_px(self, corner: AnchorCorner) -> int:
-        return sum(self.col_width_px(idx) for idx in range(corner.col)) + corner.col_off_px
+        return self.cell_origin_x_px(corner.col) + corner.col_off_px
 
     def absolute_y_px(self, corner: AnchorCorner) -> int:
-        return sum(self.row_height_px(idx) for idx in range(corner.row)) + corner.row_off_px
+        return self.cell_origin_y_px(corner.row) + corner.row_off_px
 
     def split_col(self, col: int, offset_px: int) -> tuple[int, int]:
         # Guard pathological infinite loops.

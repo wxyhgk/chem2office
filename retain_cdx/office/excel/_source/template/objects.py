@@ -5,9 +5,9 @@ from pathlib import Path
 import uuid
 import xml.etree.ElementTree as ET
 
-from .anchors import OleAnchor
-from .template_common import set_anchor_corner
-from .template_namespaces import NS, NS_R, ensure_sheet_namespaces
+from ..anchors import OleAnchor
+from .common import set_anchor_corner
+from .namespaces import NS, NS_R, ensure_sheet_namespaces
 
 
 def update_ole_objects(

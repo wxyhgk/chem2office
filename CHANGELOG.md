@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.0.9 — 2026-07-31
+
+Excel internals restructure, preview sizing fixes, and cell-text public API.
+
+### Excel internals (no public behavior change)
+
+- `_source/template_*.py` modules consolidated into the `_source/template/` package.
+- `_parts/ole.py` split into focused modules: `merge` (orchestrator), `context`, `surface`, `ole_objects`, `util`. The unused `_parts/ole.py` compat shim was removed (internal path, no import guarantee).
+- New internal DTO layer `office/excel/models.py` (`PreviewSpec` / `LayoutSpec` / `NormalizeSpec` / `ShellSourceOptions` / `SourceBuildRequest`), now threaded end-to-end: `builder` → `workbook` → `generated` → `fill_parts` and the shell path take spec objects instead of re-declaring 12-18 scalar kwargs per signature; the two near-identical generated orchestrators were merged.
+- `_ooxml` is now the single source of truth for OOXML plumbing: namespace URI constants and `register_namespaces` (previously triplicated in `template/namespaces.py` and `_parts/surface.py`), relationship-type URLs, and the `.rels` read/rewrite helpers (`read_rels` / `rewrite_rel_targets`) used by `_parts` and `_shell/media_rels`.
+- Removed dead code: `template/xml.py` (facade of a facade) and the unused `extract_base_ole_anchor` export.
+
+### Picture mode (optional, for large batches)
+
+- New `ExcelCDXWriter.insert_pictures_many()` inserts structures as plain Excel pictures instead of OLE objects. A picture is one `xdr:pic` anchor plus a media part — no CFBF container, no VML shape, no activation machinery — so a single sheet can hold thousands of structures and stay responsive. Anchors are computed from the target sheet's real column widths / row heights, and the drawing part is reused when the sheet already has one. Trade-off: pictures cannot be opened in ChemDraw by double-click, so keep `insert_cdx_many` for rows that must stay editable.
+- `add_smiles_ole_by_merge --picture-mode` exposes it. Measured on 50 molecules against the OLE path: no OLE containers (0 vs 361 KB), no VML (0 vs 33 KB), 2.9× less shape XML (241 vs 689 KB), and a smaller workbook (159 vs 296 KB).
+- `add_smiles_ole_by_merge --no-smiles-column` drops the SMILES text column so structures take column A. This is a layout choice only — the SMILES text is well under 1% of the file and never the reason Excel struggles.
+
+### OLE object display box / large-batch performance
+
+- **Fixed**: the generated path stripped `autoPict` from `objectPr`, leaving the spec default (*true*) in force — "size this object from its referenced picture". Excel then measures every preview image at layout time, which is both wrong (previews are deliberately supersampled) and expensive on sheets holding thousands of objects. `normalize_object_pr` now writes `autoPict="0"` and `defaultSize="0"` explicitly, matching Excel-authored files.
+- `add_smiles_ole_by_merge --split N` writes one workbook per N structures. Thousands of embedded OLE objects on a single sheet are slow in Excel on modest hardware regardless of file size — each object carries a CFBF container, activation machinery, and a shape in both the DrawingML and VML layers. Splitting keeps every file responsive with no loss of editability.
+
+### Worksheet schema order (fixed Excel repair prompts)
+
+- **Fixed**: `attach_ole_objects` inserted `drawing` / `legacyDrawing` / `oleObjects` immediately after `pageMargins`, which pushed any existing `pageSetup` / `headerFooter` behind them. That violates the fixed CT_Worksheet child sequence (ECMA-376 §18.3.1.99), and Excel responds by repairing the file — which drops the drawing and OLE parts. Any target workbook carrying page-setup settings (i.e. most real Excel files) was affected.
+- New `insert_worksheet_child()` in `_ooxml/xml_io.py` places elements by schema rank; it also backs `dimension` creation in `_ooxml/cells.py`.
+- `attach_ole_objects` now finds `<oleObjects>` nested in `mc:AlternateContent` (Excel's own serialization) and appends into it instead of creating a second, schema-illegal container.
+
+### Preview sizing fixes
+
+- **Fixed**: the RDKit PNG path discarded explicit `preview_width` / `preview_height` whenever a target aspect was in play (always, since strategy B) — requesting 1200×900 produced a ~44×30 px raster. Explicit sizes now set the canvas; the target aspect only letterboxes.
+- **Fixed**: ACS 1996 pins the drawn bond length, so explicit sizes used to leave a tiny molecule adrift in whitespace (or a tiny raster upscaled blurrily). The molecule is now vector-scaled to fill the requested canvas, keeping ACS proportions.
+- Default PNG previews (no explicit size) are supersampled to 4× the OLE display box instead of the ACS flexi canvas (~25 px for small molecules, blurry once Excel upscaled it).
+- Shell previews fall back to the molecule's own aspect when the VML display box cannot be parsed.
+
+### Preview rendering
+
+- EMF previews are batched through a persistent `inkscape --shell` process (`render_emf_many`) instead of one Inkscape cold start per molecule.
+
+### Public API
+
+- `ExcelCDXWriter.set_cell_text` / `set_cell_texts` / `set_column_width` / `set_row_height` — write plain text (IDs, headers) and grid sizes next to inserted structures. Use these instead of post-processing with openpyxl, which drops OLE parts.
+- `Placement` supports a second anchor: `to_cell` / `to_offset_x` / `to_offset_y`. When set, the display box spans from-anchor → to-anchor resolved against the target sheet's real column widths / row heights (Excel 64/19 px defaults otherwise), overriding `width_px`/`height_px`/`DisplayOptions`; the target grid is never reshaped in this mode. Works on both the generated and shell paths; the CLI's `--to` flag is back.
+- `StructureSource.from_smiles` exposes ChemDraw style passthrough: `bond_length` / `line_width` / `bold_width` / `label_size` (CDX document properties, points). `add_smiles_ole_by_merge`'s style flags work again.
+
+### CLI
+
+- New `scripts.cli.smiles_id_structure_table`: build ID + structure tables from `.smiles` files (SMILES+ID per line), with `--id-header` / `--structure-header` / `--preview-format` / `--limit` options.
+- `add_smiles_ole_by_merge` gains `--preview-format {png,emf,auto}` (was hardcoded to PNG). EMF is worth preferring for large batches: on a 50-molecule sample it was both smaller and faster than the 900×650 PNG default (0.3 MB vs 4.2 MB workbook, 2.9 s vs 10.9 s), since vector previews skip the supersampled raster path and Inkscape runs batched.
+- The legacy `scripts/xlsx/`, `scripts/ole/`, `scripts/render/` trees were removed; all four CLIs now run on the `retain_cdx` public API. Ported CLI changes: `inject_cdx_into_xlsx` drops `--stream` and the `emu` unit (`--to` is kept, now backed by the public two-point `Placement`), and `--template` now uses the shell path (one `--cdx` per run); `add_smiles_ole_by_merge` requires an OLE-free input workbook. CLIs (not the library) additionally require `openpyxl` for plain-table preprocessing.
+
 ## 0.0.8 — 2026-07-13
 
 Preview rendering, shell OLE geometry, and packaging improvements for server-friendly ChemDraw Excel embeds.

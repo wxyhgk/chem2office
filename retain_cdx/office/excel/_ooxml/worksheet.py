@@ -9,6 +9,7 @@ from .xml_io import (
     NS_MAIN,
     NS_R,
     ensure_sheet_compat_namespaces,
+    insert_worksheet_child,
     write_sheet_xml,
 )
 
@@ -32,24 +33,27 @@ def attach_ole_objects(
     drawing = root.find("s:drawing", NS)
     legacy_drawing = root.find("s:legacyDrawing", NS)
     target_ole_objects = root.find("s:oleObjects", NS)
-    if drawing is None or legacy_drawing is None or target_ole_objects is None:
-        page_margins = root.find("s:pageMargins", NS)
-        insert_after = page_margins if page_margins is not None else sheet_data
-        pos = list(root).index(insert_after) + 1
-        if drawing is None:
-            drawing = ET.Element(f"{{{NS_MAIN}}}drawing", {f"{{{NS_R}}}id": drawing_rid})
-            root.insert(pos, drawing)
-            pos += 1
-        if legacy_drawing is None:
-            legacy_drawing = ET.Element(
-                f"{{{NS_MAIN}}}legacyDrawing",
-                {f"{{{NS_R}}}id": vml_rid},
-            )
-            root.insert(pos, legacy_drawing)
-            pos += 1
-        if target_ole_objects is None:
-            target_ole_objects = ET.Element(f"{{{NS_MAIN}}}oleObjects")
-            root.insert(pos, target_ole_objects)
+    if target_ole_objects is None:
+        # Excel wraps its own oleObjects in mc:AlternateContent; append into the
+        # Choice payload rather than creating a second (schema-illegal) container.
+        target_ole_objects = root.find("mc:AlternateContent/mc:Choice/s:oleObjects", NS)
+    if target_ole_objects is None:
+        target_ole_objects = root.find("mc:AlternateContent/mc:Fallback/s:oleObjects", NS)
+
+    # Each element goes at its CT_Worksheet rank — inserting "after pageMargins"
+    # pushed pageSetup/headerFooter behind drawing and made Excel repair the file.
+    if drawing is None:
+        drawing = ET.Element(f"{{{NS_MAIN}}}drawing", {f"{{{NS_R}}}id": drawing_rid})
+        insert_worksheet_child(root, drawing)
+    if legacy_drawing is None:
+        legacy_drawing = ET.Element(
+            f"{{{NS_MAIN}}}legacyDrawing",
+            {f"{{{NS_R}}}id": vml_rid},
+        )
+        insert_worksheet_child(root, legacy_drawing)
+    if target_ole_objects is None:
+        target_ole_objects = ET.Element(f"{{{NS_MAIN}}}oleObjects")
+        insert_worksheet_child(root, target_ole_objects)
 
     if drawing.get(f"{{{NS_R}}}id") is None:
         drawing.set(f"{{{NS_R}}}id", drawing_rid)

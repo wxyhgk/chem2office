@@ -40,13 +40,23 @@ Excel OLE 生成器。
 ## 文件说明
 
 - `retain_cdx/` - 库主包（`ExcelCDXWriter` 等 API）。
+  - `retain_cdx/office/excel/` - Excel OLE 写入实现
+    （结构说明见 `retain_cdx/office/excel/README.md`）。
+  - `retain_cdx/render/` - 预览图渲染（RDKit / Open Babel / EMF）。
+  - `retain_cdx/structure/` - 结构来源、归一化、几何。
+  - `retain_cdx/ole/` - CFBF/OLE 容器读写。
   - `retain_cdx/data/template.xlsx` - 默认使用的内置模板
     （单行、已包含一个 ChemDraw OLE 对象）。
-- `scripts/` - 模块化脚本目录。
-  - `scripts/cli/` - CLI 入口（`python3 -m scripts.cli.<名称>` 运行）
-  - `scripts/ole/` - OLE 注入逻辑
-  - `scripts/render/` - 预览图生成
-  - `scripts/xlsx/` - XLSX 结构处理
+- `scripts/` - 脚本目录。
+  - `scripts/cli/` - CLI 入口（`python3 -m scripts.cli.<名称>` 运行），
+    全部基于 `retain_cdx` 公共 API 实现：
+    - `inject_cdx_into_xlsx` - 把 CDX 文件批量注入 Excel（每行一个 OLE）
+    - `smiles_id_structure_table` - 从 `.smiles` 文件生成「编号 + 结构」表
+    - `add_smiles_ole_by_merge` - 给已有数据表插入一列 ChemDraw 结构
+    - `make_state_pair_layout` - 生成「OLE + 基态/激发态标签」双行版式
+  - 旧版 `scripts/ole/`、`scripts/render/`、`scripts/xlsx/` 已删除
+    （逻辑与 `retain_cdx` 包内实现重复）；新代码请依赖 `retain_cdx`
+    公共 API
 - `examples/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
 - `docs/` - 开发记录与参考资料。
   - `docs/template_reference/` - 内置模板解包后的静态参考文件。
@@ -56,8 +66,13 @@ Excel OLE 生成器。
 
 - Python 3.10+
 - `olefile`（`pip install olefile`）
-- Open Babel 命令行（`obabel`，用于生成预览 PNG）
-- 可选：`Pillow`（用于预览图裁剪，`.[dev]` 会安装）
+- 预览图后端（二选一，默认优先 RDKit）：
+  - RDKit + `pycdxml`（`.[chem]` 会安装）— 默认，ACS 1996 期刊风格
+  - Open Babel 命令行（`obabel`）— 回退方案
+- 可选：`Pillow`（用于预览图裁剪/letterbox，`.[dev]` 会安装）
+- 可选：Inkscape（`preview_format="emf"` 矢量预览需要）
+- 仅 `scripts/cli/` 脚本需要：`openpyxl`（用来准备/预处理普通表格部分；
+  库本体不依赖它）
 
 ## 开发安装
 
@@ -149,7 +164,10 @@ python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/1.cdx examples/2.cdx 
 脚本会自动：
 - 把文件名（去后缀）写入 A 列。
 - 在 B 列放入对应的 OLE 对象。
-- 用 Open Babel 生成预览 PNG 并绑定到对应 OLE。
+- 生成预览 PNG（默认 RDKit ACS 1996 风格，回退 Open Babel）并绑定到对应 OLE。
+
+注意：`--template` 模式现在复用「原生 Excel+ChemDraw shell」路径
+（`ShellTemplate`），一次只支持一个 `--cdx` 文件。
 
 ### 位置与尺寸控制
 
@@ -167,7 +185,7 @@ python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/1.cdx examples/2.cdx 
    - `--from`
    - `--to`
 
-锚点语法：
+锚点语法（`--from` 与 `--to` 相同）：
 
 ```text
 A1
@@ -178,47 +196,40 @@ B2+0pt,40pt
 含义：
 - `A1` 表示左上角单元格。
 - `+5mm,3mm` 表示在该单元格内再偏移 `5mm` 和 `3mm`。
-- 支持单位：`mm`、`pt`、`in`、`emu`。
+- 支持单位：`mm`、`pt`、`in`、`px`。
 
-### `--from` 和 `--to` 的行为
+### `--from` / `--to` 的行为
 
-这个规则很重要：
-
-- 只传 `--from`
-  - 只平移对象
-  - 保持模板原始长宽比和尺寸不变
-  - 适合“换位置，不想变形”
-
-- 同时传 `--from` 和 `--to`
-  - 重新定义对象显示框
-  - 宽高会按新的锚点框变化
-  - 适合明确指定对象跨哪些单元格
+- `--from` 只平移对象（覆盖 `--col`/`--start-row`/`--margin-*`）。
+- 不带 `--to` 时，显示框大小由 `--width`/`--height` 决定。
+- `--to` 用第二个锚点定义显示框：框从 `--from` 一直伸到
+  `--to` 指定单元格的**左上角**（加偏移），跨度按目标表的真实
+  列宽/行高解析（未设置的列/行按 Excel 默认 64px/19px）。
+  设置 `--to` 时会覆盖 `--width`/`--height`，且不再调整行高/列宽。
+  对应公共 API 的 `Placement(to_cell=..., to_offset_x=..., to_offset_y=...)`。
 
 例子：
 
 ```bash
-# 只移动到 A1/A2 附近，保持原始尺寸
+# 只移动到 A1 附近，保持默认尺寸
 python3 -m scripts.cli.inject_cdx_into_xlsx \
-  --cdx sdfData/GDG906.cdx \
+  --cdx examples/san.cdx \
   --from A1+2mm,45pt \
   -o moved_only.xlsx
-```
 
-```bash
-# 强制定义一个新的显示框，会改变宽高
+# 两点锚：框从 A1（内偏 2mm,10pt）一直铺到 C4 左上角
 python3 -m scripts.cli.inject_cdx_into_xlsx \
-  --cdx sdfData/GDG906.cdx \
-  --from A1+5mm,20pt \
-  --to A2+20mm,10pt \
-  -o resized_box.xlsx
+  --cdx examples/san.cdx \
+  --from A1+2mm,10pt \
+  --to C4 \
+  -o two_point.xlsx
 ```
 
 ### 关于长宽比
 
 - OLE 对象本身并不会自动“聪明缩放”。
-- 如果你显式给了新的 `--from` 和 `--to`，程序会把这个矩形当成新的显示框。
+- `--width`/`--height` 定义的矩形就是显示框。
 - 如果这个框比原始比例更高、更窄，视觉上就会出现“被拉长”或“被压扁”。
-- 如果只想改位置，优先只传 `--from`。
 
 ### 方形双行布局脚本
 
@@ -290,9 +301,10 @@ python3 -m scripts.cli.make_state_pair_layout \
 
 说明：
 
-- 默认布局下，CLI 现在内部直接复用内置模板的稳定工作流。
-- 只有在显式传入定位参数（如 `--col`、`--start-row`、`--width`、`--height`、
-  `--from`、`--to`）时，才会走从零构造 XLSX 骨架的路径。
+- 上述流程现在全部由 `retain_cdx` 库内部实现（`ExcelCDXWriter`）；
+  CLI 只负责解析参数并调用公共 API。
+- 定位参数（`--col`、`--start-row`、`--width`、`--height`、`--from`）
+  会被翻译成 `Placement` / `DisplayOptions` 传给库。
 
 ## 限制
 
@@ -342,8 +354,7 @@ python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx --output outp
 **5) 对象位置对了，但看起来被拉长或压扁**
 
 - 这是显示框比例问题，不是 OLE 本身损坏。
-- 如果同时传了 `--from` 和 `--to`，对象会被放进你指定的新矩形里。
-- 新矩形越偏离原始比例，视觉变形越明显。
+- `--width`/`--height` 指定的矩形越偏离原始比例，视觉变形越明显。
 - 如果只是改位置，优先只传 `--from`。
 - 如果需要自动保持比例并尽量填满方形区域，优先用
   `python3 -m scripts.cli.make_state_pair_layout --fill-ratio 0.9`。

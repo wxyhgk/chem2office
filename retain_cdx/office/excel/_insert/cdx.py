@@ -4,6 +4,8 @@ from pathlib import Path
 
 from retain_cdx.structure import StructureSource
 
+from retain_cdx.office.excel._utils import px_to_points
+
 from .plan import InsertPlan
 
 
@@ -13,14 +15,16 @@ def write_cdx_sources(
     plan: InsertPlan,
 ) -> list[Path]:
     cdx_paths: list[Path] = []
+    layout = plan.layout
+    normalize = plan.normalize
     for idx, source in enumerate(sources, start=1):
-        if plan.normalize_cdx:
+        if normalize.enabled:
             source = source.normalized(
-                margin=plan.normalize_margin,
-                target_aspect=plan.width_px / plan.height_px,
-                target_width=plan.width_px * 0.75,
-                target_height=plan.height_px * 0.75,
-                fill_ratio=plan.normalize_fill_ratio,
+                margin=normalize.margin,
+                target_aspect=layout.width_px / layout.height_px,
+                target_width=px_to_points(layout.width_px),
+                target_height=px_to_points(layout.height_px),
+                fill_ratio=normalize.fill_ratio,
             )
         path = output_dir / f"source_{idx}.cdx"
         source.write_cdx(path)

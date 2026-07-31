@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,6 +11,10 @@ PreviewFormat = Literal["auto", "png", "emf"]
 ResolvedPreviewFormat = Literal["png", "emf"]
 PreviewBackend = Literal["auto", "rdkit", "obabel"]
 PreviewStyle = Literal["acs1996", "default"]
+
+# How many SVG→EMF exports to send to one long-lived ``inkscape --shell`` process.
+# Keeps memory bounded while avoiding per-file cold starts (~0.5s on macOS).
+_INKSCAPE_SHELL_CHUNK = 80
 
 
 def inkscape_available() -> bool:
@@ -97,7 +102,7 @@ def mol_from_cdx(cdx_path: Path) -> Any:
     """Load the first molecule from a CDX file via pycdxml → CDXML → RDKit."""
     from pycdxml.cdxml_converter.chemdraw_io import read_cdx
     from rdkit import Chem
-    from rdkit.Chem import AllChem
+    from rdkit.Chem import AllChem, Draw
 
     doc = read_cdx(str(cdx_path))
     cdxml = doc.to_cdxml()
@@ -108,7 +113,26 @@ def mol_from_cdx(cdx_path: Path) -> Any:
     mol = mols[0]
     if mol.GetNumConformers() == 0:
         AllChem.Compute2DCoords(mol)
+    elif mol.GetNumBonds() > 0:
+        # Degenerate CDX coords (mean bond length 0) break ACS1996.
+        try:
+            if Draw.MeanBondLength(mol) <= 0:
+                AllChem.Compute2DCoords(mol)
+        except Exception:
+            AllChem.Compute2DCoords(mol)
     return mol
+
+
+def _acs1996_supported(mol: Any) -> bool:
+    """ACS1996 needs at least one bond with positive mean bond length."""
+    if mol is None or mol.GetNumBonds() <= 0:
+        return False
+    try:
+        from rdkit.Chem import Draw
+
+        return Draw.MeanBondLength(mol) > 0
+    except Exception:
+        return False
 
 
 def render_mol_png(
@@ -130,29 +154,87 @@ def render_mol_png(
     if image_size is not None:
         width = height = image_size
 
+    use_acs = style == "acs1996" and _acs1996_supported(mol)
+
     if width is None and height is None:
         # Flexi canvas is recommended for ACS1996 mode.
         drawer = Draw.MolDraw2DCairo(-1, -1)
-        if style == "acs1996":
+        if use_acs:
             Draw.DrawMoleculeACS1996(drawer, mol)
         else:
             opts = drawer.drawOptions()
             if mono:
                 opts.useBWAtomPalette()
             drawer.DrawMolecule(mol)
-    else:
-        w = int(width or height or 300)
-        h = int(height or width or 300)
-        drawer = Draw.MolDraw2DCairo(w, h)
-        opts = drawer.drawOptions()
-        if style == "acs1996":
-            Draw.SetACS1996Mode(opts, Draw.MeanBondLength(mol))
-        elif mono:
-            opts.useBWAtomPalette()
-        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        png_path.write_bytes(drawer.GetDrawingText())
+        return
 
+    w = int(width or height or 300)
+    h = int(height or width or 300)
+    if use_acs:
+        png_path.write_bytes(_acs_png_sized(mol, w, h))
+        return
+    drawer = Draw.MolDraw2DCairo(w, h)
+    opts = drawer.drawOptions()
+    if mono:
+        opts.useBWAtomPalette()
+    drawer.DrawMolecule(mol)
     drawer.FinishDrawing()
     png_path.write_bytes(drawer.GetDrawingText())
+
+
+def _draw_acs_flexi_png(mol: Any, scale: float = 1.0) -> bytes:
+    """Flexi-canvas ACS 1996 PNG; *scale* supersamples the whole drawing."""
+    from rdkit.Chem import Draw
+
+    drawer = Draw.MolDraw2DCairo(-1, -1)
+    opts = drawer.drawOptions()
+    Draw.SetACS1996Mode(opts, Draw.MeanBondLength(mol))
+    if scale != 1.0:
+        # ACS pins the drawn bond length; scale every fixed quantity so the
+        # style's proportions survive supersampling.
+        opts.fixedBondLength *= scale
+        opts.scalingFactor *= scale
+        opts.bondLineWidth *= scale
+        if opts.fixedFontSize > 0:
+            opts.fixedFontSize = max(1, round(opts.fixedFontSize * scale))
+    drawer.DrawMolecule(mol)
+    drawer.FinishDrawing()
+    return drawer.GetDrawingText()
+
+
+def _acs_png_sized(mol: Any, w: int, h: int) -> bytes:
+    """ACS 1996 art scaled to fill a w×h canvas.
+
+    ACS mode draws at a fixed physical size regardless of canvas, so a plain
+    fixed-canvas draw leaves a tiny molecule adrift in whitespace. Measure the
+    flexi render, redraw supersampled to fit, then pad to the exact canvas.
+    """
+    base = _draw_acs_flexi_png(mol)
+    try:
+        from PIL import Image
+    except ImportError:
+        # Without Pillow keep the legacy fixed canvas (molecule at ACS size).
+        from rdkit.Chem import Draw
+
+        drawer = Draw.MolDraw2DCairo(w, h)
+        Draw.SetACS1996Mode(drawer.drawOptions(), Draw.MeanBondLength(mol))
+        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        return drawer.GetDrawingText()
+
+    from io import BytesIO
+
+    nw, nh = Image.open(BytesIO(base)).size
+    scale = min(w / nw, h / nh) if nw > 0 and nh > 0 else 1.0
+    art = _draw_acs_flexi_png(mol, scale=scale) if scale > 0 else base
+    content = Image.open(BytesIO(art)).convert("RGB")
+    buf = BytesIO()
+    letterbox_image(
+        content, canvas_width=w, canvas_height=h, fill_ratio=1.0, padding=0
+    ).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def render_mol_svg(
@@ -174,8 +256,10 @@ def render_mol_svg(
     if image_size is not None:
         width = height = image_size
 
+    use_acs = style == "acs1996" and _acs1996_supported(mol)
+
     if width is None and height is None:
-        if style == "acs1996":
+        if use_acs:
             svg_path.write_text(Draw.MolToACS1996SVG(mol), encoding="utf-8")
             return
         drawer = Draw.MolDraw2DSVG(-1, -1)
@@ -191,7 +275,7 @@ def render_mol_svg(
     h = int(height or width or 300)
     drawer = Draw.MolDraw2DSVG(w, h)
     opts = drawer.drawOptions()
-    if style == "acs1996":
+    if use_acs:
         Draw.SetACS1996Mode(opts, Draw.MeanBondLength(mol))
     elif mono:
         opts.useBWAtomPalette()
@@ -217,6 +301,7 @@ def render_png(
     crop_padding: int = 2,
     keep_size: bool = True,
     target_aspect: float | None = None,
+    fill_ratio: float = 0.90,
 ) -> str:
     """Render CDX to PNG. Returns the backend used (``rdkit`` or ``obabel``)."""
     chosen = resolve_preview_backend(backend)
@@ -226,6 +311,8 @@ def render_png(
     if chosen == "rdkit":
         try:
             mol = mol_from_cdx(Path(cdx_path))
+            # Explicit sizes set the canvas resolution; target_aspect only
+            # letterboxes below (strategy B). Flexi-draw when no size given.
             render_mol_png(
                 mol,
                 png_path,
@@ -235,12 +322,13 @@ def render_png(
                 style=style,
                 mono=mono,
             )
-            if crop:
+            if crop or target_aspect is not None:
                 crop_png_whitespace(
                     png_path,
                     padding=crop_padding,
-                    keep_size=keep_size,
+                    keep_size=keep_size if target_aspect is None else True,
                     target_aspect=target_aspect,
+                    fill_ratio=fill_ratio,
                 )
             return "rdkit"
         except SystemExit:
@@ -268,12 +356,13 @@ def render_png(
         mono=mono,
     )
     _run(cmd, tool="obabel")
-    if crop:
+    if crop or target_aspect is not None:
         crop_png_whitespace(
             png_path,
             padding=crop_padding,
-            keep_size=keep_size,
+            keep_size=keep_size if target_aspect is None else True,
             target_aspect=target_aspect,
+            fill_ratio=fill_ratio,
         )
     return "obabel"
 
@@ -337,6 +426,102 @@ def render_svg(
     return "obabel"
 
 
+def _resolve_emf_aspect(
+    *,
+    target_aspect: float | None,
+    width: int | None,
+    height: int | None,
+    image_size: int | None,
+) -> float | None:
+    if target_aspect is not None and target_aspect > 0:
+        return target_aspect
+    if width and height and height > 0:
+        return width / height
+    if image_size:
+        return 1.0
+    return None
+
+
+def _inkscape_action_path(path: Path) -> str:
+    """Absolute path safe for Inkscape ``--shell`` action values.
+
+    Action lists are ``;``-separated; reject paths that would break parsing.
+    """
+    resolved = str(Path(path).resolve())
+    if ";" in resolved or "\n" in resolved:
+        raise ValueError(f"Path not safe for inkscape --shell actions: {resolved!r}")
+    return resolved
+
+
+def svg_to_emf_batch(
+    pairs: Sequence[tuple[Path, Path]],
+    *,
+    text_to_path: bool = True,
+    chunk_size: int = _INKSCAPE_SHELL_CHUNK,
+) -> None:
+    """Convert many SVG files to EMF with one or more ``inkscape --shell`` sessions.
+
+    Avoids cold-starting the full Inkscape.app per file (often ~0.5s on macOS).
+    """
+    if not pairs:
+        return
+    if not inkscape_available():
+        raise SystemExit(
+            "Inkscape is required for EMF preview. "
+            "Install it (e.g. `brew install inkscape`)."
+        )
+    if chunk_size < 1:
+        raise ValueError("chunk_size must be >= 1")
+
+    items = [(Path(svg), Path(emf)) for svg, emf in pairs]
+    for svg, emf in items:
+        if not svg.is_file():
+            raise SystemExit(f"SVG not found for EMF export: {svg}")
+        emf.parent.mkdir(parents=True, exist_ok=True)
+
+    for start in range(0, len(items), chunk_size):
+        chunk = items[start : start + chunk_size]
+        lines: list[str] = []
+        for svg, emf in chunk:
+            actions = [
+                f"file-open:{_inkscape_action_path(svg)}",
+                f"export-filename:{_inkscape_action_path(emf)}",
+            ]
+            if text_to_path:
+                # Match CLI ``--export-text-to-path`` so Excel does not sub fonts.
+                actions.append("export-text-to-path:true")
+            actions.extend(["export-do", "file-close"])
+            lines.append(";".join(actions))
+        lines.append("quit")
+        script = "\n".join(lines) + "\n"
+
+        proc = subprocess.run(
+            ["inkscape", "--shell"],
+            input=script,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise SystemExit(f"inkscape --shell failed: {detail}")
+
+        missing = [
+            str(emf)
+            for _, emf in chunk
+            if not emf.exists() or emf.stat().st_size == 0
+        ]
+        if missing:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            hint = f" ({detail})" if detail else ""
+            raise SystemExit(
+                "Inkscape --shell did not produce EMF for: "
+                + ", ".join(missing[:5])
+                + ("…" if len(missing) > 5 else "")
+                + hint
+            )
+
+
 def render_emf(
     cdx_path: Path,
     emf_path: Path,
@@ -359,64 +544,99 @@ def render_emf(
     Pipeline (sharp at any zoom; matches shell box aspect):
       1. flexi ACS SVG (vector, tight to molecule)
       2. letterbox SVG viewBox to shell aspect / fill ratio
-      3. Inkscape SVG → EMF (keeps paths; no PNG raster)
+      3. Inkscape SVG → EMF via ``--shell`` (keeps paths; no PNG raster)
     """
+    used = render_emf_many(
+        [(Path(cdx_path), Path(emf_path))],
+        width=width,
+        height=height,
+        image_size=image_size,
+        thick_lines=thick_lines,
+        no_margin=no_margin,
+        no_title=no_title,
+        mono=mono,
+        style=style,
+        backend=backend,
+        target_aspect=target_aspect,
+        crop_padding=crop_padding,
+        fill_ratio=fill_ratio,
+    )
+    return used[0]
+
+
+def render_emf_many(
+    jobs: Sequence[tuple[Path, Path]],
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    image_size: int | None = None,
+    thick_lines: bool = False,
+    no_margin: bool = False,
+    no_title: bool = True,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+    target_aspect: float | None = None,
+    crop_padding: int = 2,
+    fill_ratio: float = 0.92,
+) -> list[str]:
+    """Render many CDX→EMF jobs with batched ``inkscape --shell`` exports.
+
+    *jobs* is a sequence of ``(cdx_path, emf_path)``. SVG generation is per
+    molecule (fast); Inkscape is invoked in chunks so the App is not
+    cold-started once per molecule.
+    """
+    if not jobs:
+        return []
     if not inkscape_available():
         raise SystemExit(
             "Inkscape is required for EMF preview. "
             "Install it (e.g. `brew install inkscape`)."
         )
 
-    emf_path = Path(emf_path)
-    emf_path.parent.mkdir(parents=True, exist_ok=True)
+    aspect = _resolve_emf_aspect(
+        target_aspect=target_aspect,
+        width=width,
+        height=height,
+        image_size=image_size,
+    )
 
-    # Prefer explicit width/height aspect when provided.
-    aspect = target_aspect
-    if aspect is None and width and height and height > 0:
-        aspect = width / height
-    elif aspect is None and image_size:
-        aspect = 1.0
-
-    with tempfile.TemporaryDirectory(prefix="retain_cdx_emf_") as tmp:
+    used_backends: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="retain_cdx_emf_batch_") as tmp:
         tmpdir = Path(tmp)
-        svg_path = tmpdir / f"{Path(cdx_path).stem}.svg"
-        used = render_svg(
-            cdx_path,
-            svg_path,
-            # Always flexi for ACS tightness; aspect is applied via viewBox.
-            width=None,
-            height=None,
-            image_size=None,
-            thick_lines=thick_lines,
-            no_margin=no_margin,
-            no_title=no_title,
-            mono=mono,
-            style=style,
-            backend=backend,
-        )
-        if aspect is not None and aspect > 0:
-            letterbox_svg_to_aspect(
+        pairs: list[tuple[Path, Path]] = []
+        for index, (cdx_path, emf_path) in enumerate(jobs):
+            cdx_path = Path(cdx_path)
+            emf_path = Path(emf_path)
+            emf_path.parent.mkdir(parents=True, exist_ok=True)
+            svg_path = tmpdir / f"{index:05d}_{cdx_path.stem}.svg"
+            used = render_svg(
+                cdx_path,
                 svg_path,
-                target_aspect=aspect,
-                fill_ratio=fill_ratio,
-                padding_px=float(crop_padding),
+                # Always flexi for ACS tightness; aspect is applied via viewBox.
+                width=None,
+                height=None,
+                image_size=None,
+                thick_lines=thick_lines,
+                no_margin=no_margin,
+                no_title=no_title,
+                mono=mono,
+                style=style,
+                backend=backend,
             )
+            if aspect is not None and aspect > 0:
+                letterbox_svg_to_aspect(
+                    svg_path,
+                    target_aspect=aspect,
+                    fill_ratio=fill_ratio,
+                    padding_px=float(crop_padding),
+                )
+            pairs.append((svg_path, emf_path))
+            used_backends.append(used)
 
-        _run(
-            [
-                "inkscape",
-                str(svg_path),
-                "--export-filename",
-                str(emf_path),
-                # Keep text as paths so Excel does not substitute fonts.
-                "--export-text-to-path",
-            ],
-            tool="inkscape",
-        )
+        svg_to_emf_batch(pairs)
 
-    if not emf_path.exists() or emf_path.stat().st_size == 0:
-        raise SystemExit(f"Inkscape did not produce EMF: {emf_path}")
-    return used
+    return used_backends
 
 
 def letterbox_svg_to_aspect(
@@ -601,6 +821,7 @@ def render_preview(
         crop_padding=crop_padding,
         keep_size=keep_size,
         target_aspect=target_aspect,
+        fill_ratio=fill_ratio,
     )
     return "png"
 

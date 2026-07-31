@@ -1,24 +1,30 @@
+"""Replace shell preview image (media art + image rels only).
+
+装进 Excel · shell 路径 · B + C（预览侧）：
+  B  渲染新预览图写入 xl/media
+  C  更新 vml/sheet image relationships
+
+Geometry (tighten) and chrome (border) belong to the caller
+(``_source.workbook``), so this module stays a single responsibility.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
-from retain_cdx.render.preview import (
-    PreviewBackend,
-    PreviewFormat,
-    PreviewStyle,
-    preview_extension,
-    render_preview,
-)
+from retain_cdx.render.preview import preview_extension, render_preview
 from retain_cdx.structure.geometry import cdx_content_aspect
 
-from .chrome import remove_shell_ole_border, tighten_shell_display_box
+from retain_cdx.office.excel.models import PreviewSpec
+
 from .geometry import read_vml_size_px
+from .media_rels import (
+    find_image_relationship,
+    set_all_sheet_image_targets,
+    set_image_relationship,
+)
 
-
-REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-
-# Structure should nearly fill the (already tightened) display box.
+# Structure should nearly fill the display box (caller may have tightened it).
 _SHELL_FILL_RATIO = 0.98
 
 
@@ -26,20 +32,20 @@ def replace_shell_preview(
     cdx_path: Path,
     package_dir: Path,
     *,
-    width: int | None,
-    height: int | None,
-    thick_lines: bool,
-    no_margin: bool,
-    format: PreviewFormat = "png",
-    mono: bool = True,
-    backend: PreviewBackend = "auto",
-    style: PreviewStyle = "acs1996",
+    preview: PreviewSpec,
+    fill_ratio: float = _SHELL_FILL_RATIO,
 ) -> None:
-    vml_rels_path = package_dir / "xl" / "drawings" / "_rels" / "vmlDrawing1.vml.rels"
-    if not vml_rels_path.exists():
-        return
+    """Write preview media and rewire image relationships.
 
-    image_rel = _find_image_relationship(vml_rels_path)
+    If ``preview.target_aspect`` is unset, uses the current VML display box
+    aspect. *fill_ratio* stays a separate shell knob: the display box is
+    already tightened here, so ``preview.fill_ratio`` (a generated-path
+    letterbox default) does not apply.
+    """
+    width = preview.width
+    height = preview.height
+    vml_rels_path = package_dir / "xl" / "drawings" / "_rels" / "vmlDrawing1.vml.rels"
+    image_rel = find_image_relationship(vml_rels_path)
     if image_rel is None:
         return
 
@@ -48,44 +54,49 @@ def replace_shell_preview(
     media_dir.mkdir(parents=True, exist_ok=True)
     old_name = Path(old_target).name or "image1.emf"
     stem = Path(old_name).stem or "image1"
-    ext = preview_extension(format)
+    ext = preview_extension(preview.format)
     new_name = f"{stem}.{ext}"
     preview_path = media_dir / new_name
 
-    # 1) Shrink OLE frame to molecule aspect so the outer box hugs the structure.
-    content_aspect = cdx_content_aspect(Path(cdx_path).read_bytes())
-    if content_aspect and content_aspect > 0:
-        tighten_shell_display_box(package_dir, content_aspect=content_aspect)
+    vml_path = package_dir / "xl" / "drawings" / "vmlDrawing1.vml"
+    shell_w = shell_h = 0
+    if vml_path.exists():
+        try:
+            shell_w, shell_h = read_vml_size_px(vml_path.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
 
-    # 2) Drop black VML/DrawingML outline (shell_large has a visible border).
-    remove_shell_ole_border(package_dir)
+    aspect = preview.target_aspect
+    if (aspect is None or aspect <= 0) and shell_w > 0 and shell_h > 0:
+        aspect = shell_w / shell_h
+    if aspect is None or aspect <= 0:
+        # VML box unparseable: fall back to the molecule's own aspect.
+        content_aspect = cdx_content_aspect(Path(cdx_path).read_bytes())
+        if content_aspect and content_aspect > 0:
+            aspect = content_aspect
 
-    shell_width_px, shell_height_px = read_vml_size_px(
-        (package_dir / "xl" / "drawings" / "vmlDrawing1.vml").read_text(encoding="utf-8")
-    )
-    target_aspect = None
-    if shell_width_px > 0 and shell_height_px > 0:
-        target_aspect = shell_width_px / shell_height_px
-    elif content_aspect and content_aspect > 0:
-        target_aspect = content_aspect
+    # Raster default: supersample the shell box; small molecules otherwise
+    # flexi-render at ~25 px and Excel upscales them blurrily.
+    if width is None and height is None and ext == "png" and shell_w > 0 and shell_h > 0:
+        width = round(shell_w * 4)
+        height = round(shell_h * 4)
 
-    # 3) Preview art matches the (tight) display box aspect.
-    #    PNG: crop + letterbox; EMF: SVG viewBox letterbox → vector EMF.
+    # B: preview art (letterbox into display aspect — never stretch molecule).
     render_preview(
         cdx_path,
         preview_path,
-        format=format,
+        format=preview.format,
         width=width,
         height=height,
-        thick_lines=thick_lines,
-        no_margin=no_margin,
-        mono=mono,
-        backend=backend,
-        style=style,
+        thick_lines=preview.thick_lines,
+        no_margin=preview.no_margin,
+        mono=preview.mono,
+        backend=preview.backend,
+        style=preview.style,
         crop=(ext == "png"),
         crop_padding=2,
-        target_aspect=target_aspect,
-        fill_ratio=_SHELL_FILL_RATIO,
+        target_aspect=aspect,
+        fill_ratio=fill_ratio,
     )
 
     # Drop the previous media file when the extension changes (e.g. emf -> png).
@@ -93,38 +104,10 @@ def replace_shell_preview(
     if old_path != preview_path and old_path.exists():
         old_path.unlink()
 
+    # C: rewire image relationships
     new_target = f"../media/{new_name}"
-    _set_image_relationship(vml_rels_path, rel_id, new_target)
-    _set_sheet_image_relationships(
+    set_image_relationship(vml_rels_path, rel_id, new_target)
+    set_all_sheet_image_targets(
         package_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels",
         new_target,
     )
-
-
-def _find_image_relationship(rels_path: Path) -> tuple[str, str] | None:
-    root = ET.parse(rels_path).getroot()
-    for rel in root:
-        if rel.get("Type", "") == REL_IMAGE:
-            return rel.get("Id", ""), rel.get("Target", "")
-    return None
-
-
-def _set_image_relationship(rels_path: Path, rel_id: str, target: str) -> None:
-    tree = ET.parse(rels_path)
-    root = tree.getroot()
-    for rel in root:
-        if rel.get("Id") == rel_id:
-            rel.set("Target", target)
-            break
-    tree.write(rels_path, encoding="UTF-8", xml_declaration=True)
-
-
-def _set_sheet_image_relationships(rels_path: Path, target: str) -> None:
-    if not rels_path.exists():
-        return
-    tree = ET.parse(rels_path)
-    root = tree.getroot()
-    for rel in root:
-        if rel.get("Type", "") == REL_IMAGE:
-            rel.set("Target", target)
-    tree.write(rels_path, encoding="UTF-8", xml_declaration=True)

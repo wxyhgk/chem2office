@@ -24,10 +24,30 @@ class StructureSource:
         return cls(cdx_data=data, name=name or cdx_path.stem)
 
     @classmethod
-    def from_smiles(cls, smiles: str, *, name: str = "structure") -> "StructureSource":
+    def from_smiles(
+        cls,
+        smiles: str,
+        *,
+        name: str = "structure",
+        bond_length: float = 24,
+        line_width: float = 1.2,
+        bold_width: float = 4,
+        label_size: float = 16,
+    ) -> "StructureSource":
+        """Build from SMILES; the ChemDraw style knobs map to CDX document
+        properties (BondLength/LineWidth/BoldWidth/LabelSize, in points)."""
         from .converters import smiles_to_cdx_bytes
 
-        return cls(cdx_data=smiles_to_cdx_bytes(smiles), name=name)
+        return cls(
+            cdx_data=smiles_to_cdx_bytes(
+                smiles,
+                bond_length=bond_length,
+                line_width=line_width,
+                bold_width=bold_width,
+                label_size=label_size,
+            ),
+            name=name,
+        )
 
     def write_cdx(self, path: str | Path) -> Path:
         output = Path(path)
