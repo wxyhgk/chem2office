@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### PowerPoint support (new)
+
+- `PowerPointCDXWriter` inserts editable ChemDraw OLE objects into `.pptx`.
+  PresentationML positions everything in absolute EMU, so none of the Excel-side
+  grid machinery applies — no column widths, no anchor triples, no VML layer.
+  `SlidePlacement` takes `cm/mm/in/pt/px/emu` and derives the missing dimension
+  from the molecule's aspect; `SlideGrid` tiles several structures on one slide.
+- Bundled `retain_cdx/data/template.pptx` supplies the native PowerPoint+ChemDraw
+  `p:graphicFrame` and OLE container that every insert clones. Its sample object
+  (and the orphaned parts and relationships behind it) is cleared on load.
+- `retain_cdx/ole` and `retain_cdx/render` are reused unchanged: the PPT
+  container's `\x01CompObj` and `\x01Ole` streams are byte-identical to the
+  Excel template's, with the same CLSID and ProgID.
+
+### Fixed while building it
+
+- **OLE**: `patch_direntry_size` assumed the directory stream fit in one sector
+  and refused to work otherwise. PowerPoint's ChemDraw containers carry a
+  `\x02OlePres000` presentation stream, which pushes the directory past one
+  sector, so every in-place injection failed. The directory FAT chain is now
+  walked properly. (Also corrects the earlier finding that ChemDraw OLE never
+  carries a presentation stream — that holds for Excel, not PowerPoint.)
+- **PresentationML**: ElementTree drops namespace declarations no element
+  actually uses, which stripped the `xmlns:v` that the frame's
+  `<mc:Choice Requires="v">` depends on — PowerPoint then offered to repair the
+  deck. Slides are now written through `write_slide_xml`, which re-attaches it.
+- **PresentationML**: the cloned fallback picture kept `cNvPr id="0"` on every
+  structure, so shape ids collided within a slide. All ids in a clone are
+  renumbered.
+
+### Tests
+
+- `tests/ooxml_checks.py` — a reusable package oracle (dangling relationship
+  targets, missing content types, duplicate shape ids, and `mc:*` `Requires` /
+  `Ignorable` prefixes that resolve to nothing). Both regressions above were
+  confirmed to fail the suite when the fix is reverted.
+- 12 PowerPoint tests covering placement units, grid layout, per-structure parts
+  and relationships, template-orphan cleanup, and the bundled template itself.
+
 ## 0.0.9 — 2026-07-31
 
 Excel internals restructure, preview sizing fixes, and cell-text public API.

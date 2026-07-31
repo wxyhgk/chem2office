@@ -33,19 +33,29 @@ def patch_direntry_size(ole_path: Path, stream_name: str, new_size: int) -> None
         if dir_index is None:
             raise SystemExit(f"Directory entry not found for stream: {stream_name}")
 
-        dir_bytes = len(ole.direntries) * 128
-        if dir_bytes > ole.sector_size:
-            raise SystemExit(
-                "Directory stream spans multiple sectors; size patch not supported."
-            )
-        first_dir_sector = ole.first_dir_sector
-        sector_size = ole.sector_size
+        size_offset = _direntry_offset(ole, dir_index) + 120  # 8-byte LE size
     finally:
         ole.close()
 
-    dir_stream_offset = (first_dir_sector + 1) * sector_size
-    dir_entry_offset = dir_stream_offset + (dir_index * 128)
-    size_offset = dir_entry_offset + 120  # 8 bytes little-endian size
     with open(ole_path, "r+b") as f:
         f.seek(size_offset)
         f.write(new_size.to_bytes(8, "little"))
+
+
+def _direntry_offset(ole: "olefile.OleFileIO", sid: int) -> int:
+    """Byte offset of directory entry *sid*, following the directory FAT chain.
+
+    Containers with a presentation stream (PowerPoint's ChemDraw objects carry
+    ``\\x02OlePres000``) hold more than the four entries that fit in one
+    512-byte sector, so the directory stream must be walked, not assumed flat.
+    """
+    sector_size = ole.sector_size
+    per_sector = sector_size // 128
+    sector = ole.first_dir_sector
+    for _ in range(sid // per_sector):
+        if sector < 0 or sector >= len(ole.fat):
+            raise SystemExit("Directory chain ended before reaching the entry.")
+        sector = ole.fat[sector]
+        if sector >= olefile.MAXREGSECT:
+            raise SystemExit("Directory chain ended before reaching the entry.")
+    return (sector + 1) * sector_size + (sid % per_sector) * 128

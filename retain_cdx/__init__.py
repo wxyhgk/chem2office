@@ -8,15 +8,19 @@ from .office.excel import (
     PreviewOptions,
     ShellTemplate,
 )
+from .office.powerpoint import PowerPointCDXWriter, SlideGrid, SlidePlacement
 
 __all__ = [
     "DisplayOptions",
     "ExcelCDXWriter",
     "Placement",
+    "PowerPointCDXWriter",
     "PreviewOptions",
     "ShellTemplate",
+    "SlideGrid",
+    "SlidePlacement",
     "StructureSource",
     "__version__",
 ]
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"
