@@ -41,16 +41,41 @@ def rewrite_rel_targets(
     tree.write(rels_path, encoding="UTF-8", xml_declaration=True)
 
 
+def read_rel_extras(rels_path: Path) -> dict[str, dict[str, str]]:
+    """Attributes beyond Id/Type/Target, keyed by relationship Id.
+
+    ``TargetMode="External"`` lives here; rebuilding a .rels file without it
+    turns every hyperlink on the sheet into a broken internal part reference.
+    """
+    if not rels_path.exists():
+        return {}
+    root = ET.parse(rels_path).getroot()
+    extras: dict[str, dict[str, str]] = {}
+    for rel in root.findall(f"{{{RELS_NS}}}Relationship"):
+        rest = {
+            key: value
+            for key, value in rel.attrib.items()
+            if key not in ("Id", "Type", "Target")
+        }
+        if rest:
+            extras[rel.get("Id", "")] = rest
+    return extras
+
+
 def build_rels(rels_path: Path, rels: list[tuple[str, str, str]]) -> None:
+    """Write a .rels file, preserving extra attributes of relationships kept."""
+    extras = read_rel_extras(rels_path)
     root = ET.Element(f"{{{RELS_NS}}}Relationships")
     for rid, rtype, target in rels:
-        ET.SubElement(
+        element = ET.SubElement(
             root,
             f"{{{RELS_NS}}}Relationship",
             Id=rid,
             Type=rtype,
             Target=target,
         )
+        for key, value in extras.get(rid, {}).items():
+            element.set(key, value)
     xml = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
     xml = xml.replace(b"ns0:", b"").replace(b"xmlns:ns0", b"xmlns")
     rels_path.write_bytes(xml)

@@ -1,6 +1,39 @@
 # Changelog
 
-## Unreleased
+## 0.0.10 — 2026-07-31
+
+### OLE container correctness
+
+- **Fixed**: `build_chemdraw_ole` hardcoded a single FAT sector, so any CDX over
+  63,488 bytes produced a silently corrupt container — `olefile` still opened
+  it, and only reading `CONTENTS` revealed the damage. That is exactly the shape
+  of the historical "Excel deleted the object" reports. FAT, mini-FAT and the
+  directory now grow to as many sectors as the payload needs (verified from
+  1 KB to 1 MB), and a payload beyond the header-only DIFAT raises instead of
+  emitting a broken file.
+- **Fixed**: shrinking a stream across the 4096-byte mini-stream cutoff was
+  patched in place, leaving the start sector to be resolved against the wrong
+  allocator. Crossing the cutoff now rebuilds.
+- **Fixed**: `patch_direntry_size` assumed the directory fit in one sector.
+- Rebuilt containers pad free mini-FAT entries with `FREESECT`, matching
+  Windows-authored files byte for byte for the same content.
+- `write_cdx_to_ole` no longer uses `SystemExit` message matching as control
+  flow, and drops any cached `\x02OlePres000` presentation stream rather than
+  shipping one that renders the *previous* molecule.
+
+### Excel geometry and relationships
+
+- **Fixed**: column widths assumed Calibri 11's 7px max digit width. The unit is
+  the workbook's normal font (ECMA-376 §18.3.1.13) — the bundled template is
+  itself a 等线-11 file where a default column is 72px, not 64. The font is now
+  read from `xl/styles.xml`, with a lookup table and a Calibri fallback.
+- **Fixed**: `baseColWidth` was converted as `chars * mdw + 5` without the
+  round-up to a multiple of 8 the spec requires, so a plain openpyxl workbook
+  resolved its default column to 61px instead of 64 — enough to leave a
+  two-point placement 9px short.
+- **Fixed**: rebuilding a sheet's `.rels` dropped every attribute beyond
+  Id/Type/Target, so `TargetMode="External"` was lost and each hyperlink on the
+  target sheet became a broken internal part reference.
 
 ### PowerPoint support (new)
 

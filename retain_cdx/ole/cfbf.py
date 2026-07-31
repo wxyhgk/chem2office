@@ -111,199 +111,199 @@ def _make_dir_entry(
     return buf.getvalue()
 
 
-def build_chemdraw_ole(cdx_data: bytes) -> bytes:
+def _name_sort_key(name: str) -> tuple[int, str]:
+    """CFB directory ordering: UTF-16 name length first, then uppercase name."""
+    return len(name), name.upper()
+
+
+def _build_directory(streams: list[tuple[str, int, int]], root_start: int, root_size: int) -> bytes:
+    """Directory sectors for *streams* as ``(name, start_sector, size)``.
+
+    Entries are laid out as a balanced binary search tree over the CFB name
+    ordering, coloured by depth so no red node ever parents another.
+    """
+    ordered = sorted(streams, key=lambda item: _name_sort_key(item[0]))
+    sids = {name: index + 1 for index, (name, _s, _z) in enumerate(ordered)}
+
+    links: dict[str, tuple[int, int, int]] = {}
+
+    def build(subset: list[tuple[str, int, int]], depth: int) -> int:
+        if not subset:
+            return _NOSTREAM
+        middle = len(subset) // 2
+        name = subset[middle][0]
+        left = build(subset[:middle], depth + 1)
+        right = build(subset[middle + 1 :], depth + 1)
+        links[name] = (left, right, 1 if depth % 2 == 0 else 0)
+        return sids[name]
+
+    child = build(ordered, 0)
+
+    directory = bytearray()
+    directory += _make_dir_entry(
+        "Root Entry", entry_type=5, color=0,
+        left=_NOSTREAM, right=_NOSTREAM, child=child,
+        clsid=_CHEMDRAW_CLSID, start=root_start, size=root_size,
+    )
+    for name, start, size in ordered:
+        left, right, color = links[name]
+        directory += _make_dir_entry(
+            name, entry_type=2, color=color,
+            left=left, right=right, child=_NOSTREAM,
+            clsid=_ZERO_CLSID, start=start, size=size,
+        )
+    return _pad(bytes(directory), _SECTOR_SIZE)
+
+
+def _ceil_div(value: int, divisor: int) -> int:
+    return -(-value // divisor)
+
+
+def build_chemdraw_ole(
+    cdx_data: bytes, *, extra_streams: dict[str, bytes] | None = None
+) -> bytes:
     """Return a complete CFBF (.bin) OLE file embedding *cdx_data*.
 
-    The generated binary contains three streams that Excel / ChemDraw
-    expect:
+    Always contains the three streams Excel / ChemDraw expect:
 
     * ``\\x01Ole``     – OLE version marker (20 bytes, fixed)
     * ``\\x01CompObj`` – ProgID *ChemDraw.Document.6.0*
     * ``CONTENTS``     – the raw CDX data (variable length)
 
-    All streams use the **mini-stream** when their individual size is
-    below 4096 bytes, which is the common case for typical CDX files.
-    For very large CDX data (≥4096 bytes), streams are stored as
-    regular sectors.
+    *extra_streams* adds further streams verbatim (PowerPoint's containers also
+    carry a ``\\x02OlePres000`` presentation stream, for instance).
+
+    Streams below the 4096-byte cutoff live in the mini stream, larger ones in
+    regular sectors. FAT, mini-FAT and directory all grow to as many sectors as
+    the payload needs — a single-FAT-sector layout silently corrupted any CDX
+    over ~62 KB, which is the failure mode where Excel drops the object.
     """
-    ole_data = _OLE_STREAM
-    compobj_data = _build_compobj()
-    contents_data = cdx_data
+    streams: list[tuple[str, bytes]] = [
+        ("\x01Ole", _OLE_STREAM),
+        ("\x01CompObj", _build_compobj()),
+        ("CONTENTS", cdx_data),
+    ]
+    for name, data in (extra_streams or {}).items():
+        streams.append((name, data))
 
-    # ---- Decide storage strategy ----
-    # Small streams live inside the root mini-stream, while larger
-    # CONTENTS payloads must use regular FAT sectors.
-    mini_stream_defs: list[tuple[str, bytes]] = []
-    regular_stream_defs: list[tuple[str, bytes]] = []
-    for name, data in [
-        ("\x01Ole", ole_data),
-        ("\x01CompObj", compobj_data),
-        ("CONTENTS", contents_data),
-    ]:
-        if len(data) < _MINI_STREAM_CUTOFF:
-            mini_stream_defs.append((name, data))
-        else:
-            regular_stream_defs.append((name, data))
+    entries_per_sector = _SECTOR_SIZE // 4  # 128 FAT entries per sector
 
-    # Build mini-stream: concatenate small stream data, each padded to
-    # a multiple of mini-sector size (64 bytes).
+    # ---- Mini stream (everything below the 4096-byte cutoff) ----
+    mini_defs = [(n, d) for n, d in streams if len(d) < _MINI_STREAM_CUTOFF]
+    regular_defs = [(n, d) for n, d in streams if len(d) >= _MINI_STREAM_CUTOFF]
+
     mini_stream = bytearray()
-    mini_starts: dict[str, int] = {}  # start mini-sector for each stream
-    mini_chain: list[int] = []       # mini-FAT entries
-
-    for name, sdata in mini_stream_defs:
-        start_mini_sec = len(mini_stream) // _MINI_SECTOR_SIZE
-        mini_starts[name] = start_mini_sec
-        padded = _pad(sdata, _MINI_SECTOR_SIZE)
-        n_mini_secs = len(padded) // _MINI_SECTOR_SIZE
-        for j in range(n_mini_secs):
-            sec_id = start_mini_sec + j
-            if j < n_mini_secs - 1:
-                mini_chain.append(sec_id + 1)
-            else:
-                mini_chain.append(_ENDOFCHAIN)
+    mini_starts: dict[str, int] = {}
+    mini_chain: list[int] = []
+    for name, data in mini_defs:
+        start = len(mini_stream) // _MINI_SECTOR_SIZE
+        mini_starts[name] = start if data else _ENDOFCHAIN
+        padded = _pad(data, _MINI_SECTOR_SIZE) if data else b""
+        count = len(padded) // _MINI_SECTOR_SIZE
+        for index in range(count):
+            mini_chain.append(
+                start + index + 1 if index < count - 1 else _ENDOFCHAIN
+            )
         mini_stream.extend(padded)
 
-    # Pad mini-stream to sector boundary.
-    mini_stream_padded = _pad(bytes(mini_stream), _SECTOR_SIZE)
-    n_mini_stream_sectors = len(mini_stream_padded) // _SECTOR_SIZE
+    mini_stream_padded = _pad(bytes(mini_stream), _SECTOR_SIZE) if mini_stream else b""
+    n_ministream = len(mini_stream_padded) // _SECTOR_SIZE
+    n_minifat = _ceil_div(len(mini_chain) * 4, _SECTOR_SIZE)
+    n_dir = _ceil_div((len(streams) + 1) * 128, _SECTOR_SIZE)
 
-    regular_stream_bytes: dict[str, bytes] = {}
-    regular_stream_sectors: dict[str, int] = {}
-    for name, sdata in regular_stream_defs:
-        regular_stream_bytes[name] = _pad(sdata, _SECTOR_SIZE)
-        regular_stream_sectors[name] = len(regular_stream_bytes[name]) // _SECTOR_SIZE
+    regular_bytes = {name: _pad(data, _SECTOR_SIZE) for name, data in regular_defs}
+    n_regular = sum(len(b) // _SECTOR_SIZE for b in regular_bytes.values())
 
-    # ---- Layout sectors ----
-    # Sector 0: FAT sector
-    # Sector 1: Directory sector (4 entries = 512 bytes, fits in 1 sector)
-    # Sector 2: Mini-FAT sector
-    # Sector 3 .. 3+N-1: Mini-stream data sectors
-    # Remaining sectors: regular FAT-backed streams (e.g. large CONTENTS)
-    mini_stream_start = 3
-    next_sector = mini_stream_start + n_mini_stream_sectors
+    # ---- How many FAT sectors? Each one also occupies a sector it must map. ----
+    n_fat = 1
+    while True:
+        total = n_fat + n_dir + n_minifat + n_ministream + n_regular
+        if total <= n_fat * entries_per_sector:
+            break
+        n_fat += 1
+    if n_fat > 109:
+        raise ValueError(
+            f"CDX payload too large for a header-only DIFAT ({len(cdx_data)} bytes); "
+            "DIFAT sectors are not implemented."
+        )
+
+    dir_start = n_fat
+    minifat_start = dir_start + n_dir
+    ministream_start = minifat_start + n_minifat
+    next_sector = ministream_start + n_ministream
     regular_starts: dict[str, int] = {}
-    for name, _sdata in regular_stream_defs:
+    for name, _data in regular_defs:
         regular_starts[name] = next_sector
-        next_sector += regular_stream_sectors[name]
+        next_sector += len(regular_bytes[name]) // _SECTOR_SIZE
     total_sectors = next_sector
 
-    # ---- Build FAT ----
-    fat = [0] * max(128, total_sectors)  # one FAT sector = 128 entries
-    fat[0] = _FATSECT        # sector 0 is the FAT itself
-    fat[1] = _ENDOFCHAIN     # sector 1 is directory (single sector)
-    fat[2] = _ENDOFCHAIN     # sector 2 is mini-FAT (single sector)
-    for i in range(n_mini_stream_sectors):
-        s = mini_stream_start + i
-        fat[s] = s + 1 if i < n_mini_stream_sectors - 1 else _ENDOFCHAIN
-    for name, _sdata in regular_stream_defs:
-        start = regular_starts[name]
-        count = regular_stream_sectors[name]
-        for i in range(count):
-            s = start + i
-            fat[s] = s + 1 if i < count - 1 else _ENDOFCHAIN
-    # Mark rest as free.
-    for i in range(total_sectors, 128):
-        fat[i] = _FREE
+    # ---- FAT ----
+    fat = [_FREE] * (n_fat * entries_per_sector)
+    for index in range(n_fat):
+        fat[index] = _FATSECT
 
-    fat_sector = bytearray()
-    for v in fat[:128]:
-        fat_sector += struct.pack("<I", v)
+    def chain(start: int, count: int) -> None:
+        for index in range(count):
+            sector = start + index
+            fat[sector] = sector + 1 if index < count - 1 else _ENDOFCHAIN
 
-    # ---- Build Mini-FAT ----
-    mini_fat = bytearray()
-    for v in mini_chain:
-        mini_fat += struct.pack("<I", v)
-    # Pad to sector size.
-    mini_fat = _pad(bytes(mini_fat), _SECTOR_SIZE)
+    chain(dir_start, n_dir)
+    chain(minifat_start, n_minifat)
+    chain(ministream_start, n_ministream)
+    for name, _data in regular_defs:
+        chain(regular_starts[name], len(regular_bytes[name]) // _SECTOR_SIZE)
 
-    # ---- Build Directory ----
-    root_size = len(mini_stream)  # un-padded mini-stream size
-    dir_sector = bytearray()
+    fat_sectors = b"".join(struct.pack("<I", value) for value in fat)
 
-    # DE[0]: Root Entry – child points to CompObj (DE[2]) as subtree root
-    dir_sector += _make_dir_entry(
-        "Root Entry", entry_type=5, color=0,
-        left=_NOSTREAM, right=_NOSTREAM, child=2,
-        clsid=_CHEMDRAW_CLSID,
-        start=mini_stream_start, size=root_size,
+    # ---- Mini FAT (free entries are FREESECT, matching Windows output) ----
+    minifat = bytearray()
+    for value in mini_chain:
+        minifat += struct.pack("<I", value)
+    padding = (-len(minifat)) % _SECTOR_SIZE
+    minifat += struct.pack("<I", _FREE) * (padding // 4)
+
+    # ---- Directory ----
+    placed = [
+        (
+            name,
+            mini_starts[name] if name in mini_starts else regular_starts[name],
+            len(data),
+        )
+        for name, data in streams
+    ]
+    directory = _build_directory(
+        placed,
+        root_start=ministream_start if n_ministream else _ENDOFCHAIN,
+        root_size=len(mini_stream),
     )
 
-    # DE[1]: \x01Ole – left sibling of CompObj
-    dir_sector += _make_dir_entry(
-        "\x01Ole", entry_type=2, color=0,
-        left=_NOSTREAM, right=_NOSTREAM, child=_NOSTREAM,
-        clsid=_ZERO_CLSID,
-        start=mini_starts["\x01Ole"], size=len(ole_data),
-    )
-
-    # DE[2]: \x01CompObj – subtree root, left=Ole, right=CONTENTS
-    dir_sector += _make_dir_entry(
-        "\x01CompObj", entry_type=2, color=1,
-        left=1, right=3, child=_NOSTREAM,
-        clsid=_ZERO_CLSID,
-        start=mini_starts["\x01CompObj"], size=len(compobj_data),
-    )
-
-    # DE[3]: CONTENTS
-    contents_start = (
-        mini_starts["CONTENTS"]
-        if "CONTENTS" in mini_starts
-        else regular_starts["CONTENTS"]
-    )
-    dir_sector += _make_dir_entry(
-        "CONTENTS", entry_type=2, color=0,
-        left=_NOSTREAM, right=_NOSTREAM, child=_NOSTREAM,
-        clsid=_ZERO_CLSID,
-        start=contents_start, size=len(contents_data),
-    )
-
-    dir_sector = _pad(bytes(dir_sector), _SECTOR_SIZE)
-
-    # ---- Build Header ----
+    # ---- Header ----
     header = bytearray(512)
-    # Signature
     header[0:8] = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
-    # Minor version = 0x003E, Major = 0x0003 (v3)
-    struct.pack_into("<HH", header, 24, 0x003E, 0x0003)
-    # Byte order = little-endian
-    struct.pack_into("<H", header, 28, 0xFFFE)
-    # Sector size power = 9 (512)
-    struct.pack_into("<H", header, 30, 9)
-    # Mini sector size power = 6 (64)
-    struct.pack_into("<H", header, 32, 6)
-    # Reserved (6 bytes zero) – already zero
-    # Total directory sectors = 0 (must be 0 for v3)
-    struct.pack_into("<I", header, 40, 0)
-    # Total FAT sectors = 1
-    struct.pack_into("<I", header, 44, 1)
-    # First directory sector
-    struct.pack_into("<I", header, 48, 1)
-    # Transaction signature = 0
-    struct.pack_into("<I", header, 52, 0)
-    # Mini stream cutoff
+    struct.pack_into("<HH", header, 24, 0x003E, 0x0003)  # minor / major version
+    struct.pack_into("<H", header, 28, 0xFFFE)           # little-endian
+    struct.pack_into("<H", header, 30, 9)                # 512-byte sectors
+    struct.pack_into("<H", header, 32, 6)                # 64-byte mini sectors
+    struct.pack_into("<I", header, 40, 0)                # csectDir must be 0 in v3
+    struct.pack_into("<I", header, 44, n_fat)
+    struct.pack_into("<I", header, 48, dir_start)
+    struct.pack_into("<I", header, 52, 0)                # transaction signature
     struct.pack_into("<I", header, 56, _MINI_STREAM_CUTOFF)
-    # First mini-FAT sector
-    struct.pack_into("<I", header, 60, 2)
-    # Number of mini-FAT sectors = 1
-    struct.pack_into("<I", header, 64, 1)
-    # First DIFAT sector = none
-    struct.pack_into("<I", header, 68, _ENDOFCHAIN)
-    # Number of DIFAT sectors = 0
-    struct.pack_into("<I", header, 72, 0)
-    # DIFAT array: first entry = sector 0 (FAT), rest 0xFFFFFFFE
-    struct.pack_into("<I", header, 76, 0)
-    for i in range(1, 109):
-        struct.pack_into("<I", header, 76 + i * 4, _FREE)
+    struct.pack_into("<I", header, 60, minifat_start if n_minifat else _ENDOFCHAIN)
+    struct.pack_into("<I", header, 64, n_minifat)
+    struct.pack_into("<I", header, 68, _ENDOFCHAIN)      # first DIFAT sector
+    struct.pack_into("<I", header, 72, 0)                # DIFAT sector count
+    for index in range(109):
+        value = index if index < n_fat else _FREE
+        struct.pack_into("<I", header, 76 + index * 4, value)
 
-    # ---- Assemble ----
     out = BytesIO()
-    out.write(bytes(header))          # header (512 bytes)
-    out.write(bytes(fat_sector))      # sector 0: FAT
-    out.write(bytes(dir_sector))      # sector 1: directory
-    out.write(bytes(mini_fat))        # sector 2: mini-FAT
-    out.write(mini_stream_padded)     # sector 3+: mini-stream data
-    for name, _sdata in regular_stream_defs:
-        out.write(regular_stream_bytes[name])
-
+    out.write(bytes(header))
+    out.write(fat_sectors)
+    out.write(directory)
+    out.write(bytes(minifat))
+    out.write(mini_stream_padded)
+    for name, _data in regular_defs:
+        out.write(regular_bytes[name])
+    assert out.tell() == (total_sectors + 1) * _SECTOR_SIZE, "sector layout mismatch"
     return out.getvalue()

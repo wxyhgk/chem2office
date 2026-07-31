@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "retain-cdx"
-version = "0.0.9"
-description = "Insert editable ChemDraw CDX OLE objects into Excel workbooks."
+version = "0.0.10"
+description = "Insert editable ChemDraw CDX OLE objects into Excel workbooks and PowerPoint slides."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
