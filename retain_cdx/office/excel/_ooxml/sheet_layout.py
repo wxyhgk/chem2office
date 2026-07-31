@@ -95,10 +95,40 @@ def _replace_or_remove_child(target_root: ET.Element, source_root: ET.Element, t
 
 
 def _find_exact_col(cols: ET.Element, col: int) -> ET.Element | None:
+    """Return the ``<col>`` covering exactly *col*, splitting a range if needed.
+
+    Excel groups columns (``min="1" max="10"``); appending a second definition
+    for one column inside that span leaves two overlapping entries and lets the
+    consumer decide which wins, so the covering range is split instead.
+    """
     for col_element in cols.findall("s:col", NS):
-        if col_element.get("min") == str(col) and col_element.get("max") == str(col):
+        low = int(col_element.get("min", "0") or 0)
+        high = int(col_element.get("max", col_element.get("min", "0")) or 0)
+        if not low <= col <= high:
+            continue
+        if low == high:
             return col_element
+
+        index = list(cols).index(col_element)
+        target = _clone_col(col_element, col, col)
+        replacements = []
+        if low < col:
+            replacements.append(_clone_col(col_element, low, col - 1))
+        replacements.append(target)
+        if col < high:
+            replacements.append(_clone_col(col_element, col + 1, high))
+        cols.remove(col_element)
+        for offset, element in enumerate(replacements):
+            cols.insert(index + offset, element)
+        return target
     return None
+
+
+def _clone_col(source: ET.Element, low: int, high: int) -> ET.Element:
+    element = ET.fromstring(ET.tostring(source))
+    element.set("min", str(low))
+    element.set("max", str(high))
+    return element
 
 
 def _replace_sheet_rows(source_root: ET.Element, target_root: ET.Element) -> None:

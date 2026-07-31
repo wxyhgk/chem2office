@@ -27,6 +27,7 @@ from retain_cdx.office.excel._ooxml import (
     touch_sheet_layout,
 )
 from retain_cdx.office.excel._parts import merge_source_workbook
+from retain_cdx.office.excel._parts.anchor_overflow import normalize_anchor_overflow
 from retain_cdx.office.excel._shell import ExcelGridMetrics
 from retain_cdx.office.excel._source import build_source_workbook
 from retain_cdx.office.excel._utils import parse_cell, px_to_points
@@ -100,6 +101,15 @@ def execute_insert(
 
     # 6. content types for OLE drawing / media parts
     ensure_ole_drawing_content_types(package_dir, drawing_name)
+
+    # 7. walk any overflowing anchor offset into the cell it really lands in
+    #    (no-op unless the box spans cells, e.g. a two-point placement)
+    drawings = package_dir / "xl" / "drawings"
+    normalize_anchor_overflow(
+        target_sheet.path,
+        drawings / drawing_name,
+        next(iter(sorted(drawings.glob(f"{target_sheet.prefix}*.vml"))), None),
+    )
 
 
 def resolve_two_point_layout(plan: InsertPlan, sheet_path: Path) -> InsertPlan:

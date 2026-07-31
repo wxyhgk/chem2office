@@ -71,18 +71,18 @@ worksheet `<oleObject><anchor>` / drawing `xdr:twoCellAnchor` / VML `x:Anchor`�
 > `<oleObjects>`。回归测试见 `tests/test_worksheet_schema_order.py`。
 > 教训：位置启发式（"插在某元素后面"）在 OOXML 里一律不可靠，必须按 schema 序列。
 | ~~C6~~ **已修 0.0.10** | 目标表的外部关系（超链接等）被重建时丢 `TargetMode="External"` → 链接损坏/Excel 修复 | `_ooxml/relationships.py` read_rels/build_rels 只传 (Id,Type,Target) | `https://example.com/x` 被解析为内部部件路径 |
-| C7 | 目标表已有图表/批注时，新拷贝的 drawing/VML 部件 shapeId 不重映射 → OLE↔VML 绑定悬空；追加进批注 VML 时缺 `_x0000_t75` shapetype 定义 | `_parts/surface.py` merge_drawing_and_vml（created_* 分支跳过 rewrite） | chart 表：oleObject shapeId=1026 但 VML 只有 _x0000_s1025；comments 表：t75 未定义 |
-| C8 | `set_cell_texts` 覆盖单元格时丢 `s=` 样式属性；覆盖公式格后 calcChain.xml 残留 → "Removed Records" 修复 | `_ooxml/cells.py` | 粗体/填充实测消失；calcChain 仍引用 B2 |
-| C9 | `.xlsm`：`Default bin → vbaProject` 已存在时嵌入的 oleObject*.bin 被判为 VBA 工程（content type 冲突未用 Override 解决） | `_ooxml/content_types.py` | 实测输出无嵌入 Override。（好消息：vbaProject/customXml 字节级保留） |
+| ~~C7~~ **已修 0.0.11** | 目标表已有图表/批注时，新拷贝的 drawing/VML 部件 shapeId 不重映射 → OLE↔VML 绑定悬空；追加进批注 VML 时缺 `_x0000_t75` shapetype 定义 | `_parts/surface.py` merge_drawing_and_vml（created_* 分支跳过 rewrite） | chart 表：oleObject shapeId=1026 但 VML 只有 _x0000_s1025；comments 表：t75 未定义 |
+| ~~C8~~ **已修 0.0.11** | `set_cell_texts` 覆盖单元格时丢 `s=` 样式属性；覆盖公式格后 calcChain.xml 残留 → "Removed Records" 修复 | `_ooxml/cells.py` | 粗体/填充实测消失；calcChain 仍引用 B2 |
+| ~~C9~~ **已修 0.0.11** | `.xlsm`：`Default bin → vbaProject` 已存在时嵌入的 oleObject*.bin 被判为 VBA 工程（content type 冲突未用 Override 解决） | `_ooxml/content_types.py` | 实测输出无嵌入 Override。（好消息：vbaProject/customXml 字节级保留） |
 
 ### 🟠 高风险/易碎
 
 | # | 问题 | 位置 |
 |---|------|------|
 | ~~F1~~ **已修 0.0.10** | generated 路径删除 `autoPict="0"`——ECMA-376 默认 true=按预览图原始尺寸调整对象，而预览图被我们 4× 超采样，激活/重排时框有 4× 放大风险 | `_parts/ole_objects.py` normalize_object_pr |
-| F2 | 同格溢出 `to` 标记（col/rowOff 超过格子尺寸）：Excel 按 origin+offset 容忍并在保存时归一化，但第三方消费者可能 clamp；Excel 原生文件从不写这种标记。**注意**：需先修 C3/C4 再做归一化，否则现在的字体无关字面偏移反而是保护 | `_source/anchors.py` compute_anchors |
-| F3 | `mc:Ignorable` 被整体覆盖为硬编码 5 个 token，目标已有的（如 xr6）不再声明 → 严格 MCE 消费者必须拒绝 | `_ooxml/xml_io.py` ensure_sheet_compat_namespaces |
-| F4 | `set_column_width` 遇 Excel 分组列区间（`min=1 max=10`）产生重叠 `<col>` 定义，哪个生效由消费者决定 | `_ooxml/sheet_layout.py` _find_exact_col |
+| ~~F2~~ **已修 0.0.11** | 同格溢出 `to` 标记（col/rowOff 超过格子尺寸）：Excel 按 origin+offset 容忍并在保存时归一化，但第三方消费者可能 clamp；Excel 原生文件从不写这种标记。**注意**：需先修 C3/C4 再做归一化，否则现在的字体无关字面偏移反而是保护 | `_source/anchors.py` compute_anchors |
+| ~~F3~~ **已修 0.0.11** | `mc:Ignorable` 被整体覆盖为硬编码 5 个 token，目标已有的（如 xr6）不再声明 → 严格 MCE 消费者必须拒绝 | `_ooxml/xml_io.py` ensure_sheet_compat_namespaces |
+| ~~F4~~ **已修 0.0.11** | `set_column_width` 遇 Excel 分组列区间（`min=1 max=10`）产生重叠 `<col>` 定义，哪个生效由消费者决定 | `_ooxml/sheet_layout.py` _find_exact_col |
 | ~~F5~~ **已修 0.0.10** | `embed.py` 用 `except SystemExit` + 报错字符串匹配做重建回退的控制流 | `ole/embed.py` L29 |
 
 ### 🟡 表面性/低危
@@ -105,7 +105,10 @@ worksheet `<oleObject><anchor>` / drawing `xdr:twoCellAnchor` / VML `x:Anchor`�
 - LibreOffice headless 对所有输出可开（但它连硬 schema 违规都容忍，
   只能作必要非充分 oracle；且 LO 会丢 ChemDraw OLE，不能做保真检验）。
 
-## 三、修复路线图（建议顺序）
+## 三、修复路线图（全部完成）
+
+> C1–C9 与 F1–F5 已全部修复（0.0.10 / 0.0.11）。以下为当初的建议顺序，保留作记录。
+
 
 1. **OLE 容器双修**：C1 多 FAT 扇区支持（DIFAT ≤109 扇区可覆盖 ~6.8MB）+
    C2 cutoff 穿越守卫（`(旧≥4096) != (新≥4096)` 即重建）+ 顺手 F5、FREESECT。

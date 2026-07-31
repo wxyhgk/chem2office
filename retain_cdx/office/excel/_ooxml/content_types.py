@@ -36,6 +36,35 @@ def ensure_content_type_defaults(ct_path: Path, defaults: dict[str, str]) -> Non
     ct_path.write_bytes(xml)
 
 
+_OLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.oleObject"
+
+
+def _ensure_embedding_overrides(
+    package_dir: Path, root: ET.Element, bin_default: str | None
+) -> None:
+    """Type each embedded OLE part explicitly when ``bin`` means something else.
+
+    Macro-enabled workbooks ship ``Default Extension="bin"`` pointing at
+    ``vbaProject``; without a per-part Override our ``xl/embeddings/*.bin``
+    would inherit that and Excel would read the structures as a VBA project.
+    """
+    if bin_default is None or bin_default == _OLE_CONTENT_TYPE:
+        return
+    embeddings = package_dir / "xl" / "embeddings"
+    if not embeddings.exists():
+        return
+    existing = {el.get("PartName") for el in root.findall(f"{{{_CT_NS}}}Override")}
+    for part in sorted(embeddings.glob("*.bin")):
+        part_name = f"/xl/embeddings/{part.name}"
+        if part_name not in existing:
+            ET.SubElement(
+                root,
+                f"{{{_CT_NS}}}Override",
+                PartName=part_name,
+                ContentType=_OLE_CONTENT_TYPE,
+            )
+
+
 def ensure_ole_drawing_content_types(package_dir: Path, drawing_name: str) -> None:
     path = package_dir / "[Content_Types].xml"
     media_defaults: dict[str, str] = {}
@@ -52,7 +81,11 @@ def ensure_ole_drawing_content_types(package_dir: Path, drawing_name: str) -> No
     tree = ET.parse(path)
     root = tree.getroot()
 
-    defaults = {el.get("Extension") for el in root.findall(f"{{{_CT_NS}}}Default")}
+    defaults = {
+        el.get("Extension"): el.get("ContentType")
+        for el in root.findall(f"{{{_CT_NS}}}Default")
+    }
+    _ensure_embedding_overrides(package_dir, root, defaults.get("bin"))
     for ext, content_type in [
         ("bin", "application/vnd.openxmlformats-officedocument.oleObject"),
         ("vml", "application/vnd.openxmlformats-officedocument.vmlDrawing"),

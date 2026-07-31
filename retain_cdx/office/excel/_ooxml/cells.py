@@ -41,13 +41,14 @@ def set_inline_cell_text(sheet_path: Path, cells: Mapping[str, str]) -> None:
     for row in sheet_data.findall("s:row", NS):
         rows_by_r[int(row.get("r", "0") or 0)] = row
 
+    replaced_formula = False
     for ref, text in cells.items():
         _, row_num = parse_cell(ref)
         row = rows_by_r.get(row_num)
         if row is None:
             row = ET.Element(f"{{{NS_MAIN}}}row", r=str(row_num))
             rows_by_r[row_num] = row
-        _set_inline(row, ref.strip().upper(), text)
+        replaced_formula |= _set_inline(row, ref.strip().upper(), text)
         _sort_row_cells(row)
 
     # Excel requires ascending row order; re-append everything sorted.
@@ -59,15 +60,64 @@ def set_inline_cell_text(sheet_path: Path, cells: Mapping[str, str]) -> None:
     _expand_dimension(root, cells)
     write_sheet_xml(tree, sheet_path)
 
+    if replaced_formula:
+        # sheet_path is <package>/xl/worksheets/sheetN.xml
+        drop_calc_chain(sheet_path.parent.parent.parent)
 
-def _set_inline(row: ET.Element, ref: str, text: str) -> None:
+
+def _set_inline(row: ET.Element, ref: str, text: str) -> bool:
+    """Replace the cell at *ref*. Returns True if it used to hold a formula."""
+    style = None
+    had_formula = False
     for cell in list(row.findall("s:c", NS)):
-        if cell.get("r") == ref:
-            row.remove(cell)
+        if cell.get("r") != ref:
+            continue
+        # Keep the cell's format — replacing text should not strip bold/fill.
+        style = cell.get("s")
+        had_formula = cell.find("s:f", NS) is not None
+        row.remove(cell)
     cell = ET.SubElement(row, f"{{{NS_MAIN}}}c", r=ref, t="inlineStr")
+    if style is not None:
+        cell.set("s", style)
     is_el = ET.SubElement(cell, f"{{{NS_MAIN}}}is")
     t_el = ET.SubElement(is_el, f"{{{NS_MAIN}}}t")
     t_el.text = text
+    return had_formula
+
+
+def drop_calc_chain(package_dir: Path) -> None:
+    """Remove xl/calcChain.xml and its wiring.
+
+    A chain entry pointing at a cell that no longer holds a formula makes Excel
+    report "Removed Records: Formula". The part is a cache, so dropping it is
+    safe — Excel rebuilds it on the next calculation.
+    """
+    chain = package_dir / "xl" / "calcChain.xml"
+    if not chain.exists():
+        return
+    chain.unlink()
+
+    content_types = package_dir / "[Content_Types].xml"
+    if content_types.exists():
+        ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+        tree = ET.parse(content_types)
+        root = tree.getroot()
+        for override in root.findall(f"{{{ct_ns}}}Override"):
+            if override.get("PartName") == "/xl/calcChain.xml":
+                root.remove(override)
+        xml = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+        content_types.write_bytes(xml.replace(b"ns0:", b"").replace(b"xmlns:ns0", b"xmlns"))
+
+    rels_path = package_dir / "xl" / "_rels" / "workbook.xml.rels"
+    if rels_path.exists():
+        rels_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+        tree = ET.parse(rels_path)
+        root = tree.getroot()
+        for rel in root.findall(f"{{{rels_ns}}}Relationship"):
+            if (rel.get("Target") or "").endswith("calcChain.xml"):
+                root.remove(rel)
+        xml = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+        rels_path.write_bytes(xml.replace(b"ns0:", b"").replace(b"xmlns:ns0", b"xmlns"))
 
 
 def _sort_row_cells(row: ET.Element) -> None:

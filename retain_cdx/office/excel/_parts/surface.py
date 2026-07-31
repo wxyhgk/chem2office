@@ -30,19 +30,26 @@ def merge_drawing_and_vml(
     source_vml = ET.parse(context.source_dir / "xl" / "drawings" / "vmlDrawing1.vml")
 
     if context.created_drawing and context.created_vml:
-        # Fresh copies already hold source content; only fix VML image rIds.
+        # Nothing pre-existing to collide with; only fix VML image rIds.
         rewrite_vml_relationship_ids(target_vml.getroot(), vml_rid_map)
         write_xml(target_vml, vml_path)
         return {}
 
+    # Exactly one side was freshly copied (a chart supplies the drawing, or
+    # comments supply the VML). The copy still carries the source's shape ids,
+    # so it has to be remapped too — otherwise the oleObject binds to a shape
+    # id that exists on only one of the two layers.
     shape_id_map = allocate_shape_ids(
         target_drawing.getroot(),
         target_vml.getroot(),
         source_drawing.getroot(),
     )
-    if not context.created_drawing and has_existing_drawing_content(
-        target_drawing.getroot()
-    ):
+
+    if context.created_drawing:
+        for child in target_drawing.getroot():
+            rewrite_drawing_shape_ids(child, shape_id_map)
+        write_xml(target_drawing, drawing_path)
+    elif has_existing_drawing_content(target_drawing.getroot()):
         append_drawing_content(
             target_drawing.getroot(),
             source_drawing.getroot(),
@@ -50,7 +57,12 @@ def merge_drawing_and_vml(
         )
         write_xml(target_drawing, drawing_path)
 
-    if not context.created_vml and has_existing_vml_shapes(target_vml.getroot()):
+    if context.created_vml:
+        for shape in target_vml.getroot().findall(f"{{{NS_V}}}shape"):
+            rewrite_vml_shape_ids(shape, shape_id_map)
+        rewrite_vml_relationship_ids(target_vml.getroot(), vml_rid_map)
+        write_xml(target_vml, vml_path)
+    elif has_existing_vml_shapes(target_vml.getroot()):
         append_vml_shapes(
             target_vml.getroot(),
             source_vml.getroot(),
@@ -89,11 +101,29 @@ def append_vml_shapes(
     shape_id_map: dict[int, int],
     rid_map: dict[str, str],
 ) -> None:
+    _copy_missing_shapetypes(target_root, source_root)
     for shape in source_root.findall(f"{{{NS_V}}}shape"):
         imported = copy.deepcopy(shape)
         rewrite_vml_shape_ids(imported, shape_id_map)
         rewrite_vml_relationship_ids(imported, rid_map)
         target_root.append(imported)
+
+
+def _copy_missing_shapetypes(target_root: ET.Element, source_root: ET.Element) -> None:
+    """Carry over ``v:shapetype`` definitions the appended shapes rely on.
+
+    A comment's VML only defines ``_x0000_t202``; dropping our picture shapes
+    into it leaves them pointing at an undefined ``#_x0000_t75``.
+    """
+    have = {
+        element.get("id")
+        for element in target_root.findall(f"{{{NS_V}}}shapetype")
+    }
+    for index, shapetype in enumerate(source_root.findall(f"{{{NS_V}}}shapetype")):
+        if shapetype.get("id") in have:
+            continue
+        # Definitions must precede the shapes that reference them.
+        target_root.insert(index, copy.deepcopy(shapetype))
 
 
 def allocate_shape_ids(

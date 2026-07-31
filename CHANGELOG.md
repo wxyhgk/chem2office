@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.0.11 — 2026-07-31
+
+Closes the remaining findings from `docs/excel_ooxml_research.md`; every C/F
+item in that audit is now fixed.
+
+### Target-workbook fidelity
+
+- **Fixed**: inserting into a sheet that already had a chart or comments left
+  the freshly copied drawing/VML part carrying the *source's* shape ids while
+  the other layer was remapped, so the `oleObject` bound to a shape id present
+  on only one of them. Both sides are remapped now.
+- **Fixed**: appending picture shapes into a comment's VML left them pointing at
+  an undefined `#_x0000_t75`; the missing `v:shapetype` definitions are copied.
+- **Fixed**: `set_cell_text` dropped the cell's `s=` style on overwrite, and
+  overwriting a formula cell left a stale `xl/calcChain.xml` entry behind —
+  Excel reports "Removed Records: Formula" for that. The chain part (a cache
+  Excel rebuilds) is now removed when a formula is replaced.
+- **Fixed**: macro-enabled workbooks declare `Default Extension="bin"` as
+  `vbaProject`, so embedded OLE parts inherited the wrong content type. They
+  get an explicit per-part `Override` when the default disagrees.
+- **Fixed**: `set_column_width` appended a second `<col>` inside an existing
+  grouped range (`min="1" max="10"`), leaving overlapping definitions; the
+  covering range is split instead.
+
+### Markup compatibility
+
+- **Fixed**: `mc:Ignorable` was overwritten with a fixed token list, dropping
+  whatever the target declared (`xr6`, …). The lists are merged.
+- **Fixed**: worksheets lost `xmlns` declarations for prefixes no element
+  happens to use — exactly what `mc:Ignorable` names. `write_sheet_xml` now
+  carries the source root's declarations over. (Same root cause as the
+  PowerPoint `xmlns:v` bug: ElementTree only emits prefixes in actual use.)
+
+### Anchors
+
+- **Fixed**: the `to` corner stayed on the from-cell with an offset that could
+  run several cells past its edge. Excel copes and re-normalises on save, but
+  Excel-authored files never look like that and other consumers clamp. Offsets
+  are now walked into the cell they land in, across all three representations
+  (worksheet, drawing, VML). A no-op unless the box spans cells — an ordinary
+  insert fits its cell and is untouched.
+
 ## 0.0.10 — 2026-07-31
 
 ### OLE container correctness

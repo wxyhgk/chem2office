@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 
@@ -110,11 +111,51 @@ def insert_worksheet_child(root: ET.Element, element: ET.Element) -> None:
     root.append(element)
 
 
+_REQUIRED_IGNORABLE = ("x14ac", "xr", "xr2", "xr3")
+
+
 def ensure_sheet_compat_namespaces(root: ET.Element) -> None:
-    root.set(f"{{{NS_MC}}}Ignorable", "x14ac xr xr2 xr3")
+    """Add the prefixes we rely on to ``mc:Ignorable`` without dropping others.
+
+    Overwriting the attribute used to strip whatever the source file listed
+    (``xr6`` and friends), leaving those prefixes declared but not ignorable —
+    which a strict MCE consumer must reject.
+    """
+    existing = (root.get(f"{{{NS_MC}}}Ignorable") or "").split()
+    merged = list(existing)
+    for prefix in _REQUIRED_IGNORABLE:
+        if prefix not in merged:
+            merged.append(prefix)
+    root.set(f"{{{NS_MC}}}Ignorable", " ".join(merged))
+
+
+def _root_namespace_declarations(path: Path, tag: str) -> dict[str, str]:
+    """``xmlns:*`` declarations on an existing root element, by prefixed name."""
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="UTF-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    start = text.find(f"<{tag}")
+    if start == -1:
+        return {}
+    end = text.find(">", start)
+    if end == -1:
+        return {}
+    return dict(re.findall(r'(xmlns:[\w.-]+)="([^"]*)"', text[start:end]))
 
 
 def write_sheet_xml(tree: ET.ElementTree, sheet_path: Path) -> None:
+    """Serialize a worksheet, keeping namespace declarations ElementTree drops.
+
+    ElementTree only emits ``xmlns`` for prefixes some element or attribute
+    actually uses, so a declaration that exists purely so ``mc:Ignorable`` can
+    name it (``xr6`` and friends) disappears on a round-trip — leaving the
+    document referencing an undeclared prefix.
+    """
+    inherited = _root_namespace_declarations(sheet_path, "worksheet")
+
     register_namespaces()
     tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
     text = sheet_path.read_text(encoding="UTF-8")
@@ -127,6 +168,7 @@ def write_sheet_xml(tree: ET.ElementTree, sheet_path: Path) -> None:
 
     root_tag = text[root_start:root_end]
     declarations = {
+        **inherited,
         "xmlns:x14": NS_X14,
         "xmlns:x14ac": NS_X14AC,
         "xmlns:xr": NS_XR,

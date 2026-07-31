@@ -105,11 +105,43 @@ def drawing_anchors(output: Path) -> list[dict[str, tuple[int, int, int, int]]]:
     return anchors
 
 
-def anchor_size_emu(anchor: dict[str, tuple[int, int, int, int]]) -> tuple[int, int]:
-    """Box size in EMU; generated anchors keep to-corner on the from cell."""
+def anchor_size_emu(
+    anchor: dict[str, tuple[int, int, int, int]], workbook: Path | None = None
+) -> tuple[int, int]:
+    """Box size in EMU, measured across the grid.
+
+    Anchors are normalised, so the to-corner sits in whichever cell the box
+    actually reaches; the span has to be walked rather than subtracted.
+    """
     from_c, to_c = anchor["from"], anchor["to"]
-    assert to_c[0] == from_c[0] and to_c[2] == from_c[2]
-    return to_c[1] - from_c[1], to_c[3] - from_c[3]
+    if to_c[0] == from_c[0] and to_c[2] == from_c[2]:
+        return to_c[1] - from_c[1], to_c[3] - from_c[3]
+
+    assert workbook is not None, "cross-cell anchor needs the workbook grid"
+    metrics = grid_metrics(workbook)
+    width = (
+        metrics.cell_origin_x_px(to_c[0]) + to_c[1] // EMU_PER_PIXEL
+    ) - (metrics.cell_origin_x_px(from_c[0]) + from_c[1] // EMU_PER_PIXEL)
+    height = (
+        metrics.cell_origin_y_px(to_c[2]) + to_c[3] // EMU_PER_PIXEL
+    ) - (metrics.cell_origin_y_px(from_c[2]) + from_c[3] // EMU_PER_PIXEL)
+    return width * EMU_PER_PIXEL, height * EMU_PER_PIXEL
+
+
+def grid_metrics(workbook: Path):
+    """ExcelGridMetrics for the saved workbook's first sheet."""
+    import tempfile
+
+    from retain_cdx.office.excel._ooxml import extract_xlsx
+    from retain_cdx.office.excel._shell import ExcelGridMetrics
+
+    with tempfile.TemporaryDirectory() as tmp:
+        package = Path(tmp) / "pkg"
+        package.mkdir()
+        extract_xlsx(workbook, package)
+        return ExcelGridMetrics.from_worksheet(
+            package / "xl" / "worksheets" / "sheet1.xml"
+        )
 
 
 def insert_two_point(
@@ -145,7 +177,7 @@ def test_two_point_spans_custom_grid(tmp_path: Path, placeholder_previews) -> No
 
     (anchor,) = drawing_anchors(output)
     assert anchor["from"] == (0, 0, 0, 0)
-    width_emu, height_emu = anchor_size_emu(anchor)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
     assert width_emu == (145 + 75) * EMU_PER_PIXEL
     assert height_emu == (40 + 20) * EMU_PER_PIXEL
 
@@ -170,7 +202,7 @@ def test_to_cell_overrides_width_px(tmp_path: Path, placeholder_previews) -> Non
     )
 
     (anchor,) = drawing_anchors(output)
-    width_emu, height_emu = anchor_size_emu(anchor)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
     assert width_emu == 64 * EMU_PER_PIXEL != 999 * EMU_PER_PIXEL
     assert height_emu == 19 * EMU_PER_PIXEL != 888 * EMU_PER_PIXEL
 
@@ -188,7 +220,7 @@ def test_default_grid_resolves_with_excel_defaults(
 
     (anchor,) = drawing_anchors(output)
     assert anchor["from"] == (1, 0, 1, 0)
-    width_emu, height_emu = anchor_size_emu(anchor)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
     assert width_emu == 2 * 64 * EMU_PER_PIXEL  # cols B..C
     assert height_emu == 3 * 19 * EMU_PER_PIXEL  # rows 2..4
 
@@ -213,7 +245,7 @@ def test_two_point_offsets_shift_both_corners(
 
     (anchor,) = drawing_anchors(output)
     assert anchor["from"] == (0, 8 * EMU_PER_PIXEL, 0, 13 * EMU_PER_PIXEL)
-    width_emu, height_emu = anchor_size_emu(anchor)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
     assert width_emu == (64 + 7 - 8) * EMU_PER_PIXEL
     assert height_emu == (19 + 5 - 13) * EMU_PER_PIXEL
 
@@ -236,7 +268,7 @@ def test_two_point_applies_per_row_for_many(
     assert len(anchors) == 2
     assert [a["from"][2] for a in anchors] == [0, 1]
     for anchor in anchors:
-        width_emu, height_emu = anchor_size_emu(anchor)
+        width_emu, height_emu = anchor_size_emu(anchor, output)
         assert width_emu == 2 * 64 * EMU_PER_PIXEL
         assert height_emu == 2 * 19 * EMU_PER_PIXEL
 
@@ -298,6 +330,6 @@ def test_single_anchor_placement_unchanged(tmp_path: Path, placeholder_previews)
     )
 
     (anchor,) = drawing_anchors(output)
-    width_emu, height_emu = anchor_size_emu(anchor)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
     assert width_emu == 145 * EMU_PER_PIXEL
     assert height_emu == 100 * EMU_PER_PIXEL
