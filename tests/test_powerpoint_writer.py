@@ -22,6 +22,7 @@ from retain_cdx.office.powerpoint._pml import NS_A, NS_P, NS_R
 NS = {"p": NS_P, "a": NS_A, "r": NS_R}
 NS_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
 CDX = "tests/fixtures/test.cdx"
+BLANK = "tests/fixtures/blank.pptx"
 
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def _frames(archive: zipfile.ZipFile) -> list[ET.Element]:
 
 def test_insert_one_structure_builds_a_valid_package(tmp_path, png_preview):
     out = tmp_path / "one.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx(CDX, preview=png_preview)
         writer.save(out)
 
@@ -61,21 +62,39 @@ def test_insert_one_structure_builds_a_valid_package(tmp_path, png_preview):
         assert len([n for n in archive.namelist() if "/media/" in n]) == 1
 
 
-def test_template_sample_object_is_not_shipped(tmp_path, png_preview):
-    """The bundled template's own benzene must not leak into output."""
+def test_inserted_container_carries_our_cdx(tmp_path, png_preview):
     out = tmp_path / "clean.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx(CDX, preview=png_preview)
         writer.save(out)
 
     payload = Path(CDX).read_bytes()
     with zipfile.ZipFile(out) as archive:
         bins = [n for n in archive.namelist() if "/embeddings/" in n]
-        assert len(bins) == 1, "template container left behind as an orphan"
+        assert len(bins) == 1
         contents = olefile.OleFileIO(
             io.BytesIO(archive.read(bins[0]))
         ).openstream("CONTENTS").read()
         assert contents == payload
+
+
+def test_insert_into_deck_that_already_has_ole_appends(tmp_path, png_preview):
+    """A deck already holding ChemDraw objects keeps them; ours are added."""
+    from retain_cdx.resources import bundled_template_pptx
+
+    out = tmp_path / "appended_to_existing.pptx"
+    with bundled_template_pptx() as existing:
+        with zipfile.ZipFile(existing) as archive:
+            before = len([n for n in archive.namelist() if "/embeddings/" in n])
+        with PowerPointCDXWriter(existing) as writer:
+            writer.insert_cdx(CDX, preview=png_preview)
+            writer.save(out)
+
+    assert before == 1, "sample deck should ship exactly one ChemDraw object"
+    with zipfile.ZipFile(out) as archive:
+        assert len([n for n in archive.namelist() if "/embeddings/" in n]) == 2
+        assert len(_frames(archive)) == 2
+    assert check_package(out) == []
 
 
 def test_mc_requires_prefix_stays_declared(tmp_path, png_preview):
@@ -84,7 +103,7 @@ def test_mc_requires_prefix_stays_declared(tmp_path, png_preview):
     Losing it makes PowerPoint offer to repair the deck.
     """
     out = tmp_path / "mce.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx_many([CDX, CDX], preview=png_preview)
         writer.save(out)
 
@@ -98,7 +117,7 @@ def test_mc_requires_prefix_stays_declared(tmp_path, png_preview):
 def test_shape_ids_are_unique_across_frames(tmp_path, png_preview):
     """Regression: the cloned fallback picture kept cNvPr id="0" every time."""
     out = tmp_path / "ids.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx_many([CDX] * 4, preview=png_preview)
         writer.save(out)
 
@@ -111,7 +130,7 @@ def test_shape_ids_are_unique_across_frames(tmp_path, png_preview):
 
 def test_each_structure_gets_its_own_parts_and_rels(tmp_path, png_preview):
     out = tmp_path / "many.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx_many([CDX] * 3, preview=png_preview)
         writer.save(out)
 
@@ -143,7 +162,7 @@ def test_grid_places_structures_in_rows(tmp_path, png_preview):
         columns=2, x="1cm", y="1cm", cell_width="4cm", cell_height="3cm",
         gap_x="0cm", gap_y="0cm",
     )
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx_many([CDX] * 4, grid=grid, preview=png_preview)
         writer.save(out)
 
@@ -161,7 +180,7 @@ def test_grid_places_structures_in_rows(tmp_path, png_preview):
 
 def test_placement_units_and_aspect_fill(tmp_path, png_preview):
     out = tmp_path / "place.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx(
             CDX,
             placement=SlidePlacement(x="2cm", y="1cm", width="6cm"),
@@ -186,8 +205,8 @@ def test_placement_units_and_aspect_fill(tmp_path, png_preview):
 
 def test_insert_into_user_presentation_keeps_existing_slides(tmp_path, png_preview):
     base = tmp_path / "base.pptx"
-    with PowerPointCDXWriter() as writer:
-        writer.save(base)  # template with its sample object cleared
+    with PowerPointCDXWriter(BLANK) as writer:
+        writer.save(base)  # a deck the user might hand us
 
     out = tmp_path / "appended.pptx"
     with PowerPointCDXWriter(base) as writer:
@@ -201,14 +220,14 @@ def test_insert_into_user_presentation_keeps_existing_slides(tmp_path, png_previ
 
 
 def test_slide_out_of_range_raises(png_preview):
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         with pytest.raises(ValueError, match="out of range"):
             writer.insert_cdx(CDX, slide=9, preview=png_preview)
 
 
 def test_empty_sources_is_noop(tmp_path, png_preview):
     out = tmp_path / "empty.pptx"
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx_many([], preview=png_preview)
         writer.save(out)
     with zipfile.ZipFile(out) as archive:
@@ -228,7 +247,7 @@ def test_structure_from_smiles_roundtrips_into_the_deck(tmp_path, png_preview):
     pytest.importorskip("pycdxml")
     out = tmp_path / "smiles.pptx"
     source = StructureSource.from_smiles("c1ccccc1", name="benzene")
-    with PowerPointCDXWriter() as writer:
+    with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx(source, preview=png_preview)
         writer.save(out)
 

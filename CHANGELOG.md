@@ -4,6 +4,12 @@
 
 ### PowerPoint support (new)
 
+- **Scope**: `PowerPointCDXWriter` places molecules on slides of a deck you
+  already have. Building the presentation — slides, layouts, titles, tables —
+  is left to a presentation library such as `python-pptx`; `input_pptx` is
+  required. Verified in both directions: python-pptx can build the deck before
+  we inject, and it round-trips our OLE objects intact afterwards (CDX bytes,
+  media and relationships all survive), unlike openpyxl on the Excel side.
 - `PowerPointCDXWriter` inserts editable ChemDraw OLE objects into `.pptx`.
   PresentationML positions everything in absolute EMU, so none of the Excel-side
   grid machinery applies — no column widths, no anchor triples, no VML layer.

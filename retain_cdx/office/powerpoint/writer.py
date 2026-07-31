@@ -16,7 +16,6 @@ from ._pml import (
     FramePlacement,
     OleFrameTemplate,
     append_ole_frame,
-    clear_ole_frames,
     slide_paths,
     slide_size,
 )
@@ -26,27 +25,35 @@ _DEFAULT_WIDTH_EMU = parse_emu("6cm")
 
 
 class PowerPointCDXWriter:
-    """Insert editable ChemDraw CDX OLE objects into a PPTX presentation.
+    """Place editable ChemDraw CDX OLE objects onto slides of an existing deck.
+
+    Scope is deliberately narrow: *this class puts molecules on a slide at a
+    given position*. Building the presentation itself — slides, layouts, titles,
+    tables — belongs to a presentation library such as ``python-pptx``; hand the
+    resulting ``.pptx`` here afterwards::
+
+        from pptx import Presentation
+        prs = Presentation()
+        prs.slides.add_slide(prs.slide_layouts[5]).shapes.title.text = "候选分子"
+        prs.save("deck.pptx")
+
+        with PowerPointCDXWriter("deck.pptx") as writer:
+            writer.insert_cdx(source, slide=1,
+                              placement=SlidePlacement(x="2cm", y="5cm", width="5cm"))
+            writer.save("deck_with_structures.pptx")
+
+    Either order works: python-pptx round-trips the OLE objects written here
+    without losing them (unlike openpyxl on the Excel side).
 
     Positions are absolute EMU boxes — PresentationML has no cell grid, so none
     of the Excel-side column-width/anchor machinery applies here.
     """
 
-    def __init__(self, input_pptx: str | Path | None = None):
+    def __init__(self, input_pptx: str | Path):
         self._tmp = tempfile.TemporaryDirectory(prefix="retain_cdx_pptx_")
         self.package_dir = Path(self._tmp.name) / "package"
         self.package_dir.mkdir()
-
-        if input_pptx is None:
-            with bundled_template_pptx() as template:
-                extract_xlsx(template, self.package_dir)
-            # Start from an empty canvas: the bundled slide ships one sample
-            # object whose only job is to be the frame/container template.
-            for slide in slide_paths(self.package_dir):
-                clear_ole_frames(slide)
-        else:
-            extract_xlsx(Path(input_pptx), self.package_dir)
-
+        extract_xlsx(Path(input_pptx), self.package_dir)
         self._template = self._load_frame_template()
 
     def _load_frame_template(self) -> OleFrameTemplate:

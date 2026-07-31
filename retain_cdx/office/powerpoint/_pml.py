@@ -311,57 +311,10 @@ def slide_paths(package_dir: Path) -> list[Path]:
     return paths
 
 
-def clear_ole_frames(slide_path: Path) -> None:
-    """Remove the slide's OLE frames along with their rels and parts.
-
-    Dropping only the frames would leave orphaned ``embeddings/*.bin`` and
-    ``media/*`` parts in the package — they would ship as phantom structures.
-    """
-    register_namespaces()
-    tree = ET.parse(slide_path)
-    root = tree.getroot()
-    sp_tree = root.find("p:cSld/p:spTree", NS)
-    if sp_tree is None:
-        return
-
-    orphaned: set[str] = set()
-    for frame in list(sp_tree.findall(f"{{{NS_P}}}graphicFrame")):
-        if frame.find(f".//{{{NS_P}}}oleObj") is None:
-            continue
-        for ole_obj in frame.iter(f"{{{NS_P}}}oleObj"):
-            rid = ole_obj.get(f"{{{NS_R}}}id")
-            if rid:
-                orphaned.add(rid)
-        for blip in frame.iter(f"{{{NS_A}}}blip"):
-            rid = blip.get(f"{{{NS_R}}}embed")
-            if rid:
-                orphaned.add(rid)
-        sp_tree.remove(frame)
-    write_slide_xml(tree, slide_path)
-
-    if not orphaned:
-        return
-    rels_path = slide_path.parent / "_rels" / f"{slide_path.name}.rels"
-    rels = read_rels(rels_path)
-    kept = [rel for rel in rels if rel[0] not in orphaned]
-    for rid, _rel_type, target in rels:
-        if rid not in orphaned:
-            continue
-        part = (slide_path.parent / target).resolve()
-        still_used = any(
-            (slide_path.parent / other_target).resolve() == part
-            for _rid, _type, other_target in kept
-        )
-        if not still_used and part.exists():
-            part.unlink()
-    write_rels(rels_path, kept)
-
-
 __all__ = [
     "FramePlacement",
     "OleFrameTemplate",
     "append_ole_frame",
-    "clear_ole_frames",
     "slide_paths",
     "slide_size",
 ]
