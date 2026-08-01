@@ -6,7 +6,7 @@ chosen column (default B). Built on the retain_cdx public API.
 
 Usage::
 
-    python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx -o output.xlsx
+    python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/san.cdx -o output.xlsx
     python3 -m scripts.cli.inject_cdx_into_xlsx --cdx mol.cdx --col C --start-row 2 -o output.xlsx
     python3 -m scripts.cli.inject_cdx_into_xlsx --cdx mol.cdx --from A1+5mm,3mm -o output.xlsx
     python3 -m scripts.cli.inject_cdx_into_xlsx --cdx mol.cdx --from A1 --to C4+2mm,10pt -o output.xlsx

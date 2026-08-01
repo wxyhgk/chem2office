@@ -15,7 +15,7 @@ Built on the retain_cdx public API: openpyxl prepares the blank two-row grid
 
 Usage::
 
-    python3 -m scripts.cli.make_state_pair_layout --cdx examples/san.cdx -o state_pair.xlsx
+    python3 -m scripts.cli.make_state_pair_layout --cdx tests/fixtures/san.cdx -o state_pair.xlsx
 """
 
 from __future__ import annotations

@@ -23,7 +23,6 @@ dist/
 *.log
 *.tmp
 gen*.xlsx
-output/
-/Data/
-/sdfData/
+tests/output/
+tests/data/
 legacy_rebuilt.xlsx

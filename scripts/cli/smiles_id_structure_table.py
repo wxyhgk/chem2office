@@ -9,7 +9,7 @@ Usage::
 
     python3 -m scripts.cli.smiles_id_structure_table \\
         --input /path/to/a.smiles /path/to/b.smiles \\
-        --output-dir output/smiles_tables
+        --output-dir tests/output/smiles_tables
 """
 
 from __future__ import annotations
@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> None:
         "--output-dir",
         "-o",
         type=Path,
-        default=repo / "output" / "smiles_tables",
+        default=repo / "tests" / "output" / "smiles_tables",
         help="Directory for output xlsx files",
     )
     parser.add_argument(

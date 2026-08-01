@@ -60,13 +60,16 @@ Excel OLE 生成器。
   - 旧版 `scripts/ole/`、`scripts/render/`、`scripts/xlsx/` 已删除
     （逻辑与 `retain_cdx` 包内实现重复）；新代码请依赖 `retain_cdx`
     公共 API
-- `examples/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
+- `tests/fixtures/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
 - `docs/` - 开发记录与研究报告。
   - `excel_ooxml_research.md` / `powerpoint_ole_research.md` - 对真实
     Office 文件的实证解剖，记录了本项目大部分修复的依据。
   - `developer_log.md` - 历史调试记录（路径为当时的目录结构）。
   - `template_reference/` - 内置模板解包后的静态参考文件。
-- `tests/` - 测试与夹具。
+- `tests/` - 测试、夹具与本地数据。
+  - `tests/fixtures/` - 已跟踪的样例输入（`san.cdx`、`blank.xlsx` 等）。
+  - `tests/data/` - 本地输入数据（不入库）。
+  - `tests/output/` - 运行产物（不入库）。
 
 ## 依赖
 
@@ -118,7 +121,7 @@ python -m pytest
 ```
 
 测试夹具位于 `tests/fixtures/`。测试会写入临时目录，不需要使用仓库根目录下的
-`output/`、`Data/` 或 `sdfData/`。
+`tests/output/` 或 `tests/data/`。
 
 ## 库 API
 
@@ -169,19 +172,19 @@ with PowerPointCDXWriter("deck.pptx") as writer:
 推荐用法（默认，直接使用内置模板）：
 
 ```bash
-python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/san.cdx --output output.xlsx
 ```
 
 显式指定模板：
 
 ```bash
-python3 -m scripts.cli.inject_cdx_into_xlsx --template my_template.xlsx --cdx examples/san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --template my_template.xlsx --cdx tests/fixtures/san.cdx --output output.xlsx
 ```
 
 多行（每行一个 OLE，默认也走内置模板）：
 
 ```bash
-python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/1.cdx examples/2.cdx --output output_2rows.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/1.cdx tests/fixtures/2.cdx --output output_2rows.xlsx
 ```
 
 脚本会自动：
@@ -236,13 +239,13 @@ B2+0pt,40pt
 ```bash
 # 只移动到 A1 附近，保持默认尺寸
 python3 -m scripts.cli.inject_cdx_into_xlsx \
-  --cdx examples/san.cdx \
+  --cdx tests/fixtures/san.cdx \
   --from A1+2mm,45pt \
   -o moved_only.xlsx
 
 # 两点锚：框从 A1（内偏 2mm,10pt）一直铺到 C4 左上角
 python3 -m scripts.cli.inject_cdx_into_xlsx \
-  --cdx examples/san.cdx \
+  --cdx tests/fixtures/san.cdx \
   --from A1+2mm,10pt \
   --to C4 \
   -o two_point.xlsx
@@ -266,7 +269,7 @@ OLE | 激发态 s1
 入口：
 
 ```bash
-python3 -m scripts.cli.make_state_pair_layout --cdx examples/san.cdx -o state_pair.xlsx
+python3 -m scripts.cli.make_state_pair_layout --cdx tests/fixtures/san.cdx -o state_pair.xlsx
 ```
 
 默认行为：
@@ -297,7 +300,7 @@ python3 -m scripts.cli.make_state_pair_layout --cdx examples/san.cdx -o state_pa
 
 ```bash
 python3 -m scripts.cli.make_state_pair_layout \
-  --cdx examples/san.cdx \
+  --cdx tests/fixtures/san.cdx \
   --top-label 基态 \
   --bottom-label 激发态\ s1 \
   --a-column-pixels 180 \
@@ -353,7 +356,7 @@ python3 -m scripts.cli.make_state_pair_layout \
 - 当前默认模式已经回到内置模板工作流；请直接使用：
 
 ```bash
-python3 -m scripts.cli.inject_cdx_into_xlsx --cdx examples/san.cdx --output output.xlsx
+python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/san.cdx --output output.xlsx
 ```
 
 **2) OLE 对象显示了，但双击打不开**

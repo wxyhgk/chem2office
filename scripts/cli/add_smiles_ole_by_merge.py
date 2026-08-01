@@ -15,8 +15,8 @@ had the same practical assumption: it rebuilt the sheet's drawing parts.)
 
 Usage::
 
-    python3 -m scripts.cli.add_smiles_ole_by_merge Data/data1.xlsx \
-        -o output/data1_ole_merge.xlsx --sheets P型 N型 --limit 3
+    python3 -m scripts.cli.add_smiles_ole_by_merge tests/data/input/data1.xlsx \
+        -o tests/output/data1_ole_merge.xlsx --sheets P型 N型 --limit 3
 """
 
 from __future__ import annotations
@@ -212,8 +212,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Add a ChemDraw OLE structure column to a data workbook, sheet by sheet."
     )
-    parser.add_argument("input", nargs="?", default="Data/data1.xlsx")
-    parser.add_argument("-o", "--output", default="output/data1_ole_merge.xlsx")
+    parser.add_argument("input", nargs="?", default="tests/data/input/data1.xlsx")
+    parser.add_argument("-o", "--output", default="tests/output/data1_ole_merge.xlsx")
     parser.add_argument("--sheets", nargs="+", default=list(DEFAULT_SHEETS))
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument(
