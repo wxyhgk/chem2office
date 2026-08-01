@@ -12,7 +12,6 @@ from retain_cdx.office.excel.models import (
     NormalizeSpec,
     PreviewSpec,
     ShellSourceOptions,
-    SourceBuildRequest,
 )
 from retain_cdx.office.excel.options import ExcelDisplayOptions, ExcelPlacement, ExcelShellTemplate
 
@@ -55,13 +54,6 @@ class InsertPlan:
     @property
     def col_width(self) -> float | None:
         return self.layout.col_width
-
-    def to_source_request(self) -> SourceBuildRequest:
-        return SourceBuildRequest(
-            layout=self.layout,
-            preview=self.preview,
-            shell=self.shell,
-        )
 
 
 def build_insert_plan(

@@ -1,7 +1,7 @@
 """Insert pipeline (internal): plan → CDX files → source workbook → merge.
 
 Public callers use ``ExcelCDXWriter``; this package is the orchestration layer
-between options and the ``_source`` / ``_parts`` implementation packages.
+between options and the writer packages (``_insert_ole`` / ``_shell`` / ``_parts``).
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from retain_cdx.office.excel.models import (
     NormalizeSpec,
     PreviewSpec,
     ShellSourceOptions,
-    SourceBuildRequest,
 )
 
 from .cdx import write_cdx_sources
@@ -24,7 +23,6 @@ __all__ = [
     "NormalizeSpec",
     "PreviewSpec",
     "ShellSourceOptions",
-    "SourceBuildRequest",
     "TargetSheet",
     "build_insert_plan",
     "execute_insert",

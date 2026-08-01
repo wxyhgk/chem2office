@@ -19,7 +19,7 @@
 | | ⚠️ | `_insert/` | 编排：plan → CDX → source → merge |
 | | ⚠️ | `_ole_template.py` | 从内置模板抽出可克隆的 OLE 零件 |
 | | ⚠️ | `_insert_ole.py` | generated 路径：把零件直接写进目标包 |
-| | ⚠️ | `_source/` | 仅 shell 路径：改造一份现成 shell 包 |
+| | ⚠️ | `_shell/` | 仅 shell 路径：改造一份现成 shell 包 |
 | | ⚠️ | `_parts/` | source → 目标 package 的 merge |
 | | ⚠️ | `_shell/` | 原生 ChemDraw shell 几何/预览 |
 | | ⚠️ | `_grid.py` / `_model.py` | Excel 网格度量与锚点值对象（跨子包共用） |
@@ -37,7 +37,7 @@ writer + options          ← public
    │
    ▼
 _insert ─┬─ generated → _ole_template + _insert_ole   （直写目标包）
-         ├─ shell     → _source → _parts              （改造现成 shell 包）
+         ├─ shell     → _shell/staging → _parts       （改造现成 shell 包）
          └─ picture   → _picture                      （直写，无 OLE）
 ```
 
@@ -101,14 +101,6 @@ OLE 对象（`docs/developer_log.md` 2026-03-06）。有模板就不该手写任
 **顺序要求**：锚点由 `_grid.ExcelGridMetrics` 按目标表真实行高列宽算出，
 所以 `touch_sheet_layout` 必须在插入**之前**跑（见 `_insert/executor.py`）。
 
-### `_source/` — 仅 shell 路径
-
-把一份原生 Excel+ChemDraw shell 包解包改造，留在 staging 目录里，再由
-`_parts` 搬进目标表。generated 路径已不经过这里。
-
-- `builder.py` — 认 `SourceBuildRequest`，转调 shell 组装
-- `workbook.py` — `build_source_workbook_from_shell` 与 `_fit_cdx_to_shell`
-
 ### `_shell/` — 原生 ChemDraw OLE shell（单对象 source）
 
 与 generated 的 B–D 对齐，但改的是「真·Excel+ChemDraw」模板：
@@ -124,9 +116,10 @@ OLE 对象（`docs/developer_log.md` 2026-03-06）。有模板就不该手写任
 - `geometry.py` — `tighten_shell_display_box`、`patch_shell_geometry`（`read_vml_size_px` 定义在 `vml.py`）  
 - `chrome.py` — 仅 `remove_shell_ole_border`  
 - `media_rels.py` — image rId / Target  
-- 底层：`vml` / `ooxml_patch`（`_grid` / `_model` 已提到 excel 顶层，因为 `_insert`、`_parts`、`_picture` 都要用）  
+- `staging.py` — 编排入口 `build_shell_staging` 与 `_fit_cdx_to_shell`  
+- 底层：`vml` / `ooxml_patch` / `media_rels`（`_grid` / `_model` 在 excel 顶层，三条路径共用）  
 
-**Shell 路径的编排在 `_source/workbook.py`**（顺序显式）：  
+**Shell 路径的编排在 `_shell/staging.py`**（顺序显式）：  
 B 写 bin → D' tighten → chrome → B+C 预览 → D 挪格 → chrome → pack。
 
 注意：RDKit 路径需 `.[chem]`（rdkit + pycdxml）。EMF 仍需 Inkscape。

@@ -1,9 +1,10 @@
-"""Source 组装入口（现仅 shell 路径）。
+"""把一份原生 shell 包改造成可 merge 的 staging 目录。
 
-Shell 路径：把一份原生 Excel+ChemDraw shell 包解包、改造，留在 source 目录里，
-``_parts.merge`` 再搬进用户表。
+解包 → 注入 CDX → 贴合分子 → 去边框 → 换预览 → 挪格 → 去边框，
+留在 staging 目录里由 ``_parts.merge`` 搬进用户表。
 
-generated 路径已改为直接写目标包（`_insert_ole`），不再经过这里。
+generated 与 picture 路径都是直写目标包，只有 shell 需要这一步——它改的是
+一整份现成的包，而不是往目标里拼零件。
 """
 
 from __future__ import annotations
@@ -14,27 +15,24 @@ from retain_cdx.ole.embed import write_cdx_to_ole
 from retain_cdx.structure.geometry import cdx_content_aspect
 
 from retain_cdx.office._package import extract_ooxml
-from retain_cdx.office.excel._shell import (
-    patch_shell_geometry,
-    read_vml_size_px,
-    remove_shell_ole_border,
-    replace_shell_preview,
-    tighten_shell_display_box,
-)
+from .chrome import remove_shell_ole_border
+from .geometry import patch_shell_geometry, tighten_shell_display_box
+from .preview import replace_shell_preview
+from .vml import read_vml_size_px
 from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
 from retain_cdx.office.excel.models import LayoutSpec, PreviewSpec, ShellSourceOptions
 
 
 
-def build_source_workbook_from_shell(
+def build_shell_staging(
     cdx_path: Path,
-    source_dir: Path,
+    staging_dir: Path,
     *,
     layout: LayoutSpec,
     shell: ShellSourceOptions,
     preview: PreviewSpec,
 ) -> None:
-    """Build a one-object source workbook by reusing a native OLE shell.
+    """Turn a native OLE shell package into a staging directory.
 
     Explicit substeps (same language as generated fill/wire + merge)::
 
@@ -51,7 +49,7 @@ def build_source_workbook_from_shell(
     width_px = layout.width_px if shell.resize_display else None
     height_px = layout.height_px if shell.resize_display else None
 
-    package_dir = source_dir
+    package_dir = staging_dir
     package_dir.mkdir(parents=True, exist_ok=True)
     extract_ooxml(shell.path, package_dir)
 

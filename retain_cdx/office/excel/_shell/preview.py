@@ -5,7 +5,7 @@
   C  更新 vml/sheet image relationships
 
 Geometry (tighten) and chrome (border) belong to the caller
-(``_source.workbook``), so this module stays a single responsibility.
+(``_shell.staging``), so this module stays a single responsibility.
 """
 
 from __future__ import annotations

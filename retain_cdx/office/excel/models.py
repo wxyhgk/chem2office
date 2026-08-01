@@ -1,11 +1,11 @@
 """Internal DTOs shared by excel pipeline and source builders.
 
 **Not public API.** Prefer ``ExcelCDXWriter`` + ``options.ExcelDisplayOptions`` etc.
-from the package root. These models exist so ``_insert`` and ``_source`` can
+from the package root. These models exist so ``_insert`` and the writer packages can
 share a neutral contract without depending on each other.
 
 Rules:
-  - Must not import ``_insert`` / ``_source`` (no reverse edges).
+  - Must not import ``_insert`` or any writer package (no reverse edges).
   - Safe to change within the package as long as internal callers update.
   - Do not re-export from ``retain_cdx`` / ``retain_cdx.office.excel`` ``__all__``.
 """
@@ -68,19 +68,3 @@ class ShellSourceOptions:
     # When True, pass width/height into shell geometry patch (display-driven).
     resize_display: bool = False
     fit_cdx: bool = False
-
-
-@dataclass(frozen=True)
-class SourceBuildRequest:
-    """Everything ``_source`` needs to build a temporary source workbook.
-
-    Pipeline constructs this from an insert plan; source must not import plan.
-    """
-
-    layout: LayoutSpec
-    preview: PreviewSpec
-    shell: ShellSourceOptions | None = None
-
-    @property
-    def has_shell(self) -> bool:
-        return self.shell is not None

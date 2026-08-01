@@ -1,6 +1,6 @@
 """把结构渲染成普通 Excel 图片（不放 OLE 对象）.
 
-图片模式 · 与 `_source` + `_parts` 的 OLE 路径并列的另一种落地方式：
+图片模式 · 与 `_insert_ole` 的 OLE 路径并列的另一种落地方式：
 
   B  渲染预览写入 xl/media
   C  drawing 的 image relationships

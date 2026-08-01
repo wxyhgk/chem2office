@@ -5,7 +5,7 @@ Steps (current architecture)::
   1. resolve target sheet in user package_dir
      (two-point placement resolves width/height against its real grid here)
   2. write temporary CDX files (optional normalize)
-  3. _source: 在 staging 目录里装齐零件（bin + preview + surface XML）
+  3. shell 路径：在 staging 目录里改造 shell 包；其余路径直写目标
   4. _parts:  merge source parts into package_dir
   5. touch row/col layout when not using shell
   6. ensure content types for drawing / media
@@ -30,7 +30,7 @@ from retain_cdx.office.excel._ole_template import ExcelOleTemplate
 from retain_cdx.office.excel._parts import merge_source_workbook
 from retain_cdx.office.excel._parts.anchor_overflow import normalize_anchor_overflow
 from retain_cdx.office.excel._grid import ExcelGridMetrics
-from retain_cdx.office.excel._source import build_source_workbook
+from retain_cdx.office.excel._shell import build_shell_staging
 from retain_cdx.office.excel._utils import parse_cell, px_to_points
 
 from .cdx import write_cdx_sources
@@ -67,11 +67,17 @@ def execute_insert(
         if plan.has_shell:
             # Shell 路径仍走 staging：它改的是一整份现成的 shell 包，
             # 不是往目标里拼零件。
-            source_dir = tmpdir / "source"
-            build_source_workbook(cdx_paths, source_dir, plan.to_source_request())
+            staging_dir = tmpdir / "staging"
+            build_shell_staging(
+                cdx_paths[0],
+                staging_dir,
+                layout=plan.layout,
+                shell=plan.shell,
+                preview=plan.preview,
+            )
             drawing_name = merge_source_workbook(
                 package_dir,
-                source_dir,
+                staging_dir,
                 sheet_path=target_sheet.path,
                 sheet_idx=target_sheet.index,
                 prefix=target_sheet.prefix,

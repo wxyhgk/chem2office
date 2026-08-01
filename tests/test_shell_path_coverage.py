@@ -31,7 +31,7 @@ def test_fit_cdx_normalises_the_structure_to_the_shell_box(tmp_path, monkeypatch
     """`fit_cdx=True` 会把 CDX 重排成 shell 显示框的比例。
 
     这是公开 flag `ExcelShellTemplate(fit_cdx=True)` 的唯一实现
-    (`_source/workbook._fit_cdx_to_shell`)，此前无人测。
+    (`_shell/staging._fit_cdx_to_shell`)，此前无人测。
     """
     patch_preview_renderers(monkeypatch)
     plain, fitted = tmp_path / "plain.xlsx", tmp_path / "fitted.xlsx"
