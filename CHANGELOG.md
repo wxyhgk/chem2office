@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Generated 路径清理（重构准备）
+
+- 移除 generated 路径里三处不产生任何效果的工作：往临时工作簿写文件名标签、
+  共享字符串和行高。Merge 只搬 bin、media、drawing、vml 和 `<oleObjects>`，
+  而 `copy_sheet_layout` 只在 shell 路径开启，所以这三样一直被完整丢弃。
+  产物经 79 个部件的字节级比对确认无变化。
+- 新增 `tests/test_generated_path_output.py`：锁住 generated 路径产出哪些部件、
+  临时表内容不得泄漏、以及同输入两次运行字节一致（`a16:creationId` 归一化后）。
+  这是接下来简化 `_source` + `_parts` 的护栏。
+
 ## 0.0.12 — 2026-08-01
 
 A structural release: no behaviour changes, but the public names now say which

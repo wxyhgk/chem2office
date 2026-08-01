@@ -11,9 +11,6 @@ from .namespaces import register_namespaces
 from .objects import update_drawing, update_ole_objects
 from .sheet import (
     extract_base_anchor,
-    update_row_heights,
-    update_sheet_labels,
-    write_shared_strings,
 )
 from .vml import update_vml
 
@@ -22,8 +19,5 @@ __all__ = [
     "register_namespaces",
     "update_drawing",
     "update_ole_objects",
-    "update_row_heights",
-    "update_sheet_labels",
     "update_vml",
-    "write_shared_strings",
 ]

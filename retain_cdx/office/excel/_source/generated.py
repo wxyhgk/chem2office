@@ -20,13 +20,7 @@ from retain_cdx.office.excel.models import PreviewSpec
 
 from .anchors import OleAnchor, compute_anchors
 from .fill_parts import fill_ole_bins_and_previews
-from .template import (
-    extract_base_anchor,
-    register_namespaces,
-    update_row_heights,
-    update_sheet_labels,
-    write_shared_strings,
-)
+from .template import extract_base_anchor, register_namespaces
 from .wire_surface import wire_source_surface
 
 
@@ -93,14 +87,10 @@ def _assemble_source_package(
         extract_ooxml(template, tmpdir)
 
         sheet_path = tmpdir / "xl" / "worksheets" / "sheet1.xml"
-        shared_strings_path = tmpdir / "xl" / "sharedStrings.xml"
-
+        # 模板的 shapeId 与锚点行做基准；这张临时表的单元格内容/行高不会被
+        # 搬进目标（merge 只取 bin、media、drawing、vml、<oleObjects>），
+        # 所以不写标签、共享字符串和行高。
         base_shape_id, from_row, to_row = extract_base_anchor(sheet_path)
-        labels = [path.stem for path in cdx_paths]
-        total_rows = max(anchor.to_pt.row + 1 for anchor in anchors)
-        update_sheet_labels(sheet_path, labels, total_rows=total_rows)
-        update_row_heights(sheet_path, row_height, total_rows)
-        write_shared_strings(shared_strings_path, labels)
 
         # B: bin + preview images
         filled = fill_ole_bins_and_previews(tmpdir, cdx_paths, preview=preview)
