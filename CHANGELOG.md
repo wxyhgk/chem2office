@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.13 — 2026-08-01
 
 Generated inserts stop routing through a staging workbook, and the preview
 cropper stops scanning pixels in Python. Output is unchanged apart from one VML
