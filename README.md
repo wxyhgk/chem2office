@@ -1,4 +1,4 @@
-# ChemDraw OLE 注入（Excel）
+# ChemDraw OLE 注入（Excel / PowerPoint）
 
 这个仓库实现了 ChemDraw 的 “OLE 模板注入” 流程，在 Linux/macOS 下批量生成
 可编辑的 ChemDraw OLE。默认模式会直接复用包内内置的模板
@@ -42,11 +42,14 @@ Excel OLE 生成器。
 - `retain_cdx/` - 库主包（`ExcelCDXWriter` 等 API）。
   - `retain_cdx/office/excel/` - Excel OLE 写入实现
     （结构说明见 `retain_cdx/office/excel/README.md`）。
+  - `retain_cdx/office/powerpoint/` - PowerPoint 幻灯片 OLE 写入
+    （只负责摆放分子；做 PPT 交给 python-pptx 之类，见
+    `docs/powerpoint_ole_research.md`）。
   - `retain_cdx/render/` - 预览图渲染（RDKit / Open Babel / EMF）。
   - `retain_cdx/structure/` - 结构来源、归一化、几何。
   - `retain_cdx/ole/` - CFBF/OLE 容器读写。
-  - `retain_cdx/data/template.xlsx` - 默认使用的内置模板
-    （单行、已包含一个 ChemDraw OLE 对象）。
+  - `retain_cdx/data/template.xlsx`、`template.pptx` - 内置模板
+    （由 Windows Excel/PowerPoint + ChemDraw 产出，提供 OLE 容器与骨架）。
 - `scripts/` - 脚本目录。
   - `scripts/cli/` - CLI 入口（`python3 -m scripts.cli.<名称>` 运行），
     全部基于 `retain_cdx` 公共 API 实现：
@@ -58,8 +61,11 @@ Excel OLE 生成器。
     （逻辑与 `retain_cdx` 包内实现重复）；新代码请依赖 `retain_cdx`
     公共 API
 - `examples/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
-- `docs/` - 开发记录与参考资料。
-  - `docs/template_reference/` - 内置模板解包后的静态参考文件。
+- `docs/` - 开发记录与研究报告。
+  - `excel_ooxml_research.md` / `powerpoint_ole_research.md` - 对真实
+    Office 文件的实证解剖，记录了本项目大部分修复的依据。
+  - `developer_log.md` - 历史调试记录（路径为当时的目录结构）。
+  - `template_reference/` - 内置模板解包后的静态参考文件。
 - `tests/` - 测试与夹具。
 
 ## 依赖
@@ -140,6 +146,23 @@ with ExcelCDXWriter("input.xlsx") as writer:
     writer.insert_cdx_many(sources, sheet="Sheet1", start_cell="A1")
     writer.save("output.xlsx")
 ```
+
+### PowerPoint
+
+只负责把分子放到指定幻灯片的指定位置；幻灯片本身用 `python-pptx` 之类去做：
+
+```python
+from retain_cdx import PowerPointCDXWriter, SlidePlacement, SlideGrid
+
+with PowerPointCDXWriter("deck.pptx") as writer:
+    writer.insert_cdx(source, slide=1,
+                      placement=SlidePlacement(x="2cm", y="5cm", width="6cm"))
+    writer.save("deck_with_structures.pptx")
+```
+
+长度支持 `cm/mm/in/pt/px/emu`；宽高只给一个时按分子比例补另一个。
+多个结构可用 `SlideGrid(columns=3, cell_width="5cm", cell_height="4cm")` 平铺。
+两个包可以任意先后使用——python-pptx 往返不会丢 OLE 对象。
 
 ## 用法
 
@@ -243,7 +266,7 @@ OLE | 激发态 s1
 入口：
 
 ```bash
-python3 -m scripts.cli.make_state_pair_layout --cdx sdfData/GDG906.cdx -o state_pair.xlsx
+python3 -m scripts.cli.make_state_pair_layout --cdx examples/san.cdx -o state_pair.xlsx
 ```
 
 默认行为：
@@ -274,13 +297,13 @@ python3 -m scripts.cli.make_state_pair_layout --cdx sdfData/GDG906.cdx -o state_
 
 ```bash
 python3 -m scripts.cli.make_state_pair_layout \
-  --cdx sdfData/GDG906.cdx \
+  --cdx examples/san.cdx \
   --top-label 基态 \
   --bottom-label 激发态\ s1 \
   --a-column-pixels 180 \
   --row-pixels 90 \
   --fill-ratio 0.9 \
-  -o sdfData/GDG906_state_pair_fit90.xlsx
+  -o state_pair_fit90.xlsx
 ```
 
 ## 工作原理（默认路径）

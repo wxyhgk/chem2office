@@ -1,5 +1,11 @@
 2026-03-06
 
+> Historical record — paths are the layout of the day. `scripts/ole/`,
+> `scripts/xlsx/` and `scripts/render/` were retired in 0.0.9; that logic now
+> lives in `retain_cdx/ole/`, `retain_cdx/office/excel/_ooxml/` and
+> `retain_cdx/render/`. The CFBF work described here was revisited in 0.0.10 —
+> see `excel_ooxml_research.md` (C1/C2) for what was still wrong.
+
 Issue
 - Excel could open generated `.xlsx` files but immediately reported repair errors:
   - removed record from `/xl/worksheets/sheet1.xml`
