@@ -28,7 +28,8 @@ Excel/PowerPoint 仍然认这个容器。
 embed.py     决策层：该补丁还是该重建         ← 唯一对外入口
 ├─ inject.py     就地补丁（改现成容器）
 └─ chemdraw.py   ChemDraw 身份：哪三个流、CLSID、ProgID
-   └─ cfbf.py    通用复合文件写入器（不认识化学）
+   └─ cfbf/      通用复合文件写入器（不认识化学）
+        const.py  layout.py  alloc.py  directory.py  header.py
 ```
 
 ### `embed.py` — 只回答一个问题
@@ -61,18 +62,31 @@ embed.py     决策层：该补丁还是该重建         ← 唯一对外入口
 
 `build_chemdraw_ole()` 只是组好流表，交给下面的通用写入器。
 
-### `cfbf.py` — 「复合文件怎么写」
+### `cfbf/` — 「复合文件怎么写」
 
 跟 ChemDraw 毫无关系，**能装任何东西**。之所以自己写：olefile 只读不能建。
 
-主流程是四个阶段，每个阶段一节：
+模块划分对应格式自身的结构，懂 MS-CFB 的人可以直接定位：
 
-| 阶段 | 做什么 |
-|---|---|
-| `_plan` | 每个流放 mini 流还是常规扇区；各区段占几个扇区；起始位置 |
-| `_build_fat` | 扇区分配表，把每条链串起来 |
-| `_build_directory` | 根条目 + 每流一条，排成按 CFB 序的平衡二叉查找树 |
-| `_build_header` | 512 字节头部与 DIFAT |
+| 模块 | 做什么 | 行数 |
+|---|---|---|
+| `const.py` | 格式词汇：扇区大小、特殊扇区号、签名 | 30 |
+| `layout.py` | 规划：谁住 mini 流、各段几个扇区、起点在哪（只算数，不出字节） | 125 |
+| `alloc.py` | FAT 与 mini-FAT | 39 |
+| `directory.py` | 目录树与 128 字节条目 | 120 |
+| `header.py` | 512 字节文件头与 DIFAT | 41 |
+| `__init__.py` | `build_compound_file`：把上面五步串起来 | 69 |
+
+入口读起来就是这五步：
+
+```python
+layout = plan(streams)
+out.write(build_header(layout))
+out.write(build_fat(layout))
+out.write(build_directory(layout, root_clsid=...))
+out.write(build_minifat(layout))
+out.write(layout.mini_stream)
+```
 
 布局：
 

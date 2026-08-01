@@ -56,7 +56,7 @@ from retain_cdx import (
 | `embed.py` | 唯一入口 `write_cdx_to_ole`：能就地补丁就补丁，否则重建 |
 | `inject.py` | 写入既有流、按 FAT 链定位并修补目录项长度 |
 | `chemdraw.py` | ChemDraw 身份：CLSID / ProgID / 三个流长什么样 |
-| `cfbf.py` | 通用复合文件写入器，不认识化学 |
+| `cfbf/` | 通用复合文件写入器，不认识化学（按格式结构分 5 个模块） |
 
 细节见 `ole/README.md`。
 
