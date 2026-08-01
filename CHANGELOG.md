@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.0.12 — 2026-08-01
+
+A structural release: no behaviour changes, but the public names now say which
+format they belong to, and the packages are split along the seams that the
+PowerPoint work exposed.
 
 ### Renamed the format-specific public names
 
@@ -23,6 +27,63 @@ means shared.
 
 Old names still resolve through a module `__getattr__` and raise
 `DeprecationWarning`; they will be removed in a later release.
+
+### A shared office layer
+
+Adding PowerPoint quietly broke the layering: it reached into three of Excel's
+private modules for things that were never Excel-specific. Those moved up, and
+the two format packages no longer know about each other — a rule the excel
+README now states and which is verified by grep in CI-free form (no module
+outside `office/excel/` imports an `office.excel._` private module).
+
+- `office/_package.py` — `extract_ooxml` / `pack_ooxml`, renamed from the
+  xlsx-named pair. Every OOXML file is a ZIP; PowerPoint was already using it
+  on `.pptx`.
+- `office/_units.py` — EMU is the universal OOXML unit and PresentationML uses
+  nothing else. `excel/_utils` re-exports it.
+- `office/options.py` — `PreviewOptions` describes preview rendering, not
+  spreadsheets. `excel.options` re-exports it.
+
+Inside the Excel package, `_shell/grid.py` and `_shell/model.py` moved up to
+`_grid.py` and `_model.py`: `_insert`, `_parts` and `_picture` all use them, so
+they were never shell-specific. Moving grid alone produced an import cycle
+through the `_shell` package init, which is what surfaced the misplacement.
+
+### The OLE package, split twice
+
+`cfbf.py` had grown to 324 lines holding two unrelated bodies of knowledge and
+four stages that only shared a file.
+
+- `chemdraw.py` now holds every chemistry-side fact — CLSID, ProgID, the three
+  stream payloads — and hands a stream list to a generic writer.
+- `cfbf/` is that writer, split along the format's own structure: `const`,
+  `layout` (planning only, no bytes), `alloc` (FAT / mini-FAT), `directory`,
+  `header`. The entry point reads as five steps; the longest module is 125
+  lines, down from 324.
+
+Output is byte-identical throughout: container md5s match at every size from
+1 KB to 200 KB including the 63,488/63,489 boundary, and rebuilding the bundled
+template's own CONTENTS still yields the same three streams at 4096 bytes.
+
+### Repository layout
+
+The root had eight directories, four of them scratch space, and the package
+carried three empty placeholder packages plus stale `.ipynb_checkpoints` copies
+of pre-refactor code. Everything now sits under `docs/`, `retain_cdx/`,
+`scripts/` or `tests/`; local data and outputs live in `tests/data` and
+`tests/output`. `examples/` folded into `tests/fixtures/`, where two of its
+files were byte-identical duplicates.
+
+### Documentation
+
+- `retain_cdx/README.md` — how the package divides its work, the dependency
+  rules, and the findings that shaped the code.
+- `retain_cdx/ole/README.md` — what a `.bin` actually is (with a real container
+  dumped), the patch-versus-rebuild decision, and the four places in the format
+  that are easy to get wrong.
+- The Excel README's contract table and the top-level README's file map follow
+  the moves; `developer_log.md` keeps its historical paths but gains a note
+  saying where that logic lives now.
 
 ## 0.0.11 — 2026-07-31
 
