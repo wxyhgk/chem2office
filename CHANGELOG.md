@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### 结构
+
+- `_source` 包退役：它只剩 148 行、只服务 shell 路径，包名已名不副实。
+  `workbook.py` 迁入 `_shell/staging.py`（`build_shell_staging`），与它编排的
+  geometry / chrome / preview 放在一起；`builder.py` 及随之无用的
+  `SourceBuildRequest` / `InsertPlan.to_source_request` 一并删除——它们是为
+  「分发 generated 与 shell」而存在的，现在只剩一个调用方。
+- 新增 `tests/test_shell_path_output.py`（8 个）：锁住 shell 路径产出哪些部件、
+  字节确定性、模板内容不泄漏、`allow_resize` 语义、显示框贴合分子。
+  搬家前先立护栏，搬家过程中产物零变化。
+
 ## 0.0.13 — 2026-08-01
 
 Generated inserts stop routing through a staging workbook, and the preview

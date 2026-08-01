@@ -2,8 +2,15 @@
 
 这个目录负责把可编辑的 ChemDraw CDX OLE 对象写入 `.xlsx` 文件。
 
-概念上两步：**造零件**（bin + 预览，可外置）→ **装进 Excel**（本目录主责）。  
-实现上仍是：计划 → 临时 source 小表 → merge 进目标 package。
+概念上两步：**造零件**（bin + 预览）→ **装进 Excel**（本目录主责）。
+
+三条路径，默认走第一条：
+
+| 路径 | 怎么落地 | 何时用 |
+|------|----------|--------|
+| generated | 克隆模板片段，**直写目标包** | 默认 |
+| shell | 改造一整份原生 shell 包，再 merge | 传了 `ExcelShellTemplate` |
+| picture | 只放图片，不产生 OLE 对象 | `insert_pictures_many` |
 
 ## Public API vs `_` 内部（契约对照）
 
@@ -15,8 +22,8 @@
 | **大门 Public** | ✅ 稳定 | `retain_cdx.ExcelCDXWriter` | 写 workbook 的唯一推荐入口 |
 | | ✅ | `ExcelPlacement`, `PreviewOptions`, `ExcelDisplayOptions`, `ExcelShellTemplate` | 用户配置 |
 | | ✅ | `retain_cdx.StructureSource` | 化学结构（excel 外的领域对象） |
-| **员工通道 Internal** | ⚠️ 勿当 API | `office/excel/models.py` | 内部 DTO（`PreviewSpec` / `SourceBuildRequest`…） |
-| | ⚠️ | `_insert/` | 编排：plan → CDX → source → merge |
+| **员工通道 Internal** | ⚠️ 勿当 API | `office/excel/models.py` | 内部 DTO（`PreviewSpec` / `LayoutSpec` / `ShellSourceOptions`） |
+| | ⚠️ | `_insert/` | 编排：plan → CDX → 按路径写入 |
 | | ⚠️ | `_ole_template.py` | 从内置模板抽出可克隆的 OLE 零件 |
 | | ⚠️ | `_insert_ole.py` | generated 路径：把零件直接写进目标包 |
 | | ⚠️ | `_shell/` | 仅 shell 路径：改造一份现成 shell 包 |
@@ -68,9 +75,9 @@ CFBF 容器、VML 形状和激活机制），图片则很轻，单表可装几�
 ### 依赖方向（硬规则）
 
 ```text
-writer → _insert (pipeline) → _source / _parts
-                ↘ models ↙
-_source 与 _parts 不得 import _insert。
+writer → _insert (pipeline) → _insert_ole / _shell / _picture / _parts
+                       ↘ models ↙
+写入侧的包（_insert_ole / _shell / _picture / _parts）不得 import _insert。
 excel 与 powerpoint 互不相识；两者共用的东西放 `office/` 层，
 **不允许**跨格式 import 对方的 `_` 私有模块。
 ```
@@ -79,7 +86,7 @@ excel 与 powerpoint 互不相识；两者共用的东西放 `office/` 层，
 
 - `PreviewSpec` / `LayoutSpec` / `NormalizeSpec` / `ShellSourceOptions` / `SourceBuildRequest`
 
-`InsertPlan`（`_insert/plan.py`）组合上述 spec，并提供 `to_source_request()`。
+`InsertPlan`（`_insert/plan.py`）组合上述 spec，executor 按路径取用。
 
 ### `_insert/`
 
@@ -195,7 +202,7 @@ staging 目录（已含 bin + 图 + drawing/vml/oleObjects）
 ```text
 writer
   -> _insert
-  -> _source / _parts / _picture
+  -> _insert_ole / _shell / _picture / _parts
   -> _shell
   -> _grid / _model        （网格度量与锚点值对象）
   -> _ooxml / _utils
@@ -219,7 +226,7 @@ writer
 
 ```python
 from retain_cdx.office.excel._insert import build_insert_plan, write_cdx_sources
-from retain_cdx.office.excel._source import build_source_workbook
+from retain_cdx.office.excel._shell import build_shell_staging
 from retain_cdx.office.excel._parts import merge_source_workbook
 from retain_cdx.office._package import extract_ooxml, pack_ooxml
 ```
