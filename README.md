@@ -40,6 +40,7 @@ Excel OLE 生成器。
 ## 文件说明
 
 - `retain_cdx/` - 库主包（`ExcelCDXWriter` 等 API）。
+  包内分工见 `retain_cdx/README.md`。
   - `retain_cdx/office/excel/` - Excel OLE 写入实现
     （结构说明见 `retain_cdx/office/excel/README.md`）。
   - `retain_cdx/office/powerpoint/` - PowerPoint 幻灯片 OLE 写入
