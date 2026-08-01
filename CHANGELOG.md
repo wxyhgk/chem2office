@@ -2,38 +2,85 @@
 
 ## Unreleased
 
-### Generated 路径重构（进行中）
+Generated inserts stop routing through a staging workbook, and the preview
+cropper stops scanning pixels in Python. Output is unchanged apart from one VML
+value that was previously wrong.
 
-- 新增 `_ole_template.ExcelOleTemplate`：一次性从内置模板抽出一个 OLE 对象所需
-  的四份零件（容器字节、`<oleObject>`、drawing 锚点、VML shape）与基准 shapeId。
-  与 PowerPoint 的 `OleFrameTemplate` 同一思路——模板是**零件供体**，不是工作目录。
-  纯新增，现有路径未改动。
-- generated 路径改为**直接写入目标 package**（`_insert_ole.insert_ole_objects`），
-  不再经过 staging 工作簿与 `_parts` 搬运。产出与旧路径逐部件比对一致，
-  唯一差异是 VML 的 `margin-left/top`——旧值由「均匀行高」的幻想网格算出
-  （B2 的对象写成 `margin-top:110pt`，真实是 15pt），新值按目标表真实网格算。
-  Excel 用 `x:Anchor` 定位所以看不出来，但按 style 摆放的消费者会错位。
-- 顺带要求：直写路径的锚点依赖目标网格，所以行高列宽必须**先**落到目标表上
-  （旧路径写的是「同格 + 字面偏移」，与网格无关，才可以后调）。
-- shell 路径不变，仍走 staging——它改的是一整份现成的 shell 包，模型不同。
+### Generated path writes straight into the target
 
-### 性能
+The default path used to unpack the bundled template into a staging workbook,
+edit it, and have `_parts` carry the results across. It now clones fragments
+from the template directly into the user's package — the shape `_picture.py`
+already had, and the one PowerPoint uses.
 
-- 预览图裁剪的空白检测原本是逐像素的 Python 双重循环，580×400 就要 23 万次
-  解释器迭代。改用 PIL 的 C 实现（`ImageChops.difference` + 逐通道取最大 +
-  `getbbox`）后，插入 200 个对象从 15.6s 降到 8.7s（1.8×）。
-  注意「任一通道超差」必须逐通道取最大，`convert("L")` 的亮度加权与原逻辑
-  不等价——新旧实现在 5 类图像 × 3 种 padding × 3 种阈值下逐像素比对一致。
+- `_ole_template.ExcelOleTemplate` loads the template once and yields what an
+  OLE object needs: the CFBF container, the `<oleObject>` declaration with its
+  `mc:AlternateContent` wrapper, the drawing `twoCellAnchor` with its hidden
+  placeholder, the VML shape, and the empty shells for creating new drawing and
+  VML parts. Cloning rather than synthesising is not stylistic: an early version
+  built this XML from scratch and Excel repaired the file, dropping the objects
+  (`docs/developer_log.md`, 2026-03-06).
+- `_insert_ole.insert_ole_objects` writes those fragments into the target.
+- Built alongside the old path and compared part by part before switching.
+  Everything matches except VML `margin-left`/`margin-top`, where **the new
+  values are the correct ones**: the old ones came from a grid that assumed
+  every row above matched `row_height`, so an object at B2 was written as
+  `margin-top:110pt` when the true offset is 15pt. Excel positions from
+  `x:Anchor` so it never showed, but consumers honouring `style` were misplaced.
+  This was already logged under the cosmetic findings in the research doc.
+- **Ordering requirement**: direct anchors come from `ExcelGridMetrics` reading
+  the target, so row heights and column width are now applied *before* the
+  insert. The old path wrote same-cell literal offsets, which is why it could
+  set layout afterwards.
+- Shell inserts keep the staging path — they edit a whole prepared shell
+  package rather than assembling parts.
 
-### Generated 路径清理（重构准备）
+### Dead code removed
 
-- 移除 generated 路径里三处不产生任何效果的工作：往临时工作簿写文件名标签、
-  共享字符串和行高。Merge 只搬 bin、media、drawing、vml 和 `<oleObjects>`，
-  而 `copy_sheet_layout` 只在 shell 路径开启，所以这三样一直被完整丢弃。
-  产物经 79 个部件的字节级比对确认无变化。
-- 新增 `tests/test_generated_path_output.py`：锁住 generated 路径产出哪些部件、
-  临时表内容不得泄漏、以及同输入两次运行字节一致（`a16:creationId` 归一化后）。
-  这是接下来简化 `_source` + `_parts` 的护栏。
+A `sys.settrace` survey of all three insert paths showed the rewrite left most
+of `_source` unreachable. Removed in dependency order, suite green at each step:
+`_source/template/` (549 lines, whose namespace helpers were pure re-exports of
+`_ooxml`), `generated.py`, `wire_surface.py`, `fill_parts.py`, `anchors.py`,
+the generated branch of `workbook.py`/`builder.py`, and
+`_parts/ole_objects.normalize_object_pr`. Net **-1073 lines**; `_source` is now
+148 lines serving only the shell path.
+
+Two pieces of test machinery went with it, and both were misleading:
+
+- A test asserting `ExcelOleTemplate` agrees with "the legacy reader" — which is
+  now dead code, so it compared the new implementation against something no
+  product code runs. It was the only thing keeping `_source/template/` alive.
+- `fill_parts` monkeypatches in two files that had silently become no-ops:
+  `fill_ole_bins_and_previews` never executed once in the suite, so those tests
+  were rendering for real while appearing to use placeholders. The helpers now
+  patch `_insert_ole`.
+
+Also removed earlier: three calls that wrote file-name labels, shared strings
+and row heights into the staging workbook, all of which merge discarded; and
+the pack-then-immediately-unpack round trip between `_source` and `_parts`.
+
+### Performance
+
+- The preview cropper's blank detection was a per-pixel Python double loop —
+  230k interpreter iterations for a 580×400 image, and 16.9 of 34 seconds when
+  inserting 200 objects. Rewritten on PIL's C path: **15.6s → 8.7s (1.8×)**.
+  Note the tolerance test is per-channel, so `convert("L")` would be wrong —
+  its luminance weighting hides a blue-only difference. Old and new were
+  compared pixel-for-pixel across 45 combinations of image, padding and
+  threshold.
+
+### Tests
+
+- `test_generated_path_output.py` — which parts an insert produces, that staging
+  content never leaks, and that two runs agree byte for byte (`a16:creationId`
+  is regenerated on every run, so it is normalised out). Verified it bites: renaming
+  the part prefix turns it red.
+- `test_shell_path_coverage.py` — two live-but-uncovered shell branches found by
+  the settrace survey: `ExcelShellTemplate(fit_cdx=True)`, and inserting into a
+  sheet that already owns a drawing or VML part. The latter is where research
+  finding C7 lived. Added before the removals, not after.
+- `test_excel_ole_template.py` — the fragment extractor, including a guard that
+  serialisation does not leak `ns0:`/`ns1:` prefixes.
 
 ## 0.0.12 — 2026-08-01
 

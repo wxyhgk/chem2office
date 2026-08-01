@@ -80,7 +80,7 @@ worksheet `<oleObject><anchor>` / drawing `xdr:twoCellAnchor` / VML `x:Anchor`�
 | # | 问题 | 位置 |
 |---|------|------|
 | ~~F1~~ **已修 0.0.10** | generated 路径删除 `autoPict="0"`——ECMA-376 默认 true=按预览图原始尺寸调整对象，而预览图被我们 4× 超采样，激活/重排时框有 4× 放大风险 | `_parts/ole_objects.py` normalize_object_pr |
-| ~~F2~~ **已修 0.0.11** | 同格溢出 `to` 标记（col/rowOff 超过格子尺寸）：Excel 按 origin+offset 容忍并在保存时归一化，但第三方消费者可能 clamp；Excel 原生文件从不写这种标记。**注意**：需先修 C3/C4 再做归一化，否则现在的字体无关字面偏移反而是保护 | `_source/anchors.py` compute_anchors |
+| ~~F2~~ **已修 0.0.11** | 同格溢出 `to` 标记（col/rowOff 超过格子尺寸）：Excel 按 origin+offset 容忍并在保存时归一化，但第三方消费者可能 clamp；Excel 原生文件从不写这种标记。**注意**：需先修 C3/C4 再做归一化，否则现在的字体无关字面偏移反而是保护 | `_source/anchors.py`（该模块已随 generated 路径重构删除） |
 | ~~F3~~ **已修 0.0.11** | `mc:Ignorable` 被整体覆盖为硬编码 5 个 token，目标已有的（如 xr6）不再声明 → 严格 MCE 消费者必须拒绝 | `_ooxml/xml_io.py` ensure_sheet_compat_namespaces |
 | ~~F4~~ **已修 0.0.11** | `set_column_width` 遇 Excel 分组列区间（`min=1 max=10`）产生重叠 `<col>` 定义，哪个生效由消费者决定 | `_ooxml/sheet_layout.py` _find_exact_col |
 | ~~F5~~ **已修 0.0.10** | `embed.py` 用 `except SystemExit` + 报错字符串匹配做重建回退的控制流 | `ole/embed.py` L29 |

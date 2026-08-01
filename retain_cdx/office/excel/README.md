@@ -17,8 +17,9 @@
 | | ✅ | `retain_cdx.StructureSource` | 化学结构（excel 外的领域对象） |
 | **员工通道 Internal** | ⚠️ 勿当 API | `office/excel/models.py` | 内部 DTO（`PreviewSpec` / `SourceBuildRequest`…） |
 | | ⚠️ | `_insert/` | 编排：plan → CDX → source → merge |
-| | ⚠️ | `_source/` | 临时 source.xlsx 组装（generated / shell） |
-| | ⚠️ | `_source/template/` | generated 模板的 XML 细节抽屉 |
+| | ⚠️ | `_ole_template.py` | 从内置模板抽出可克隆的 OLE 零件 |
+| | ⚠️ | `_insert_ole.py` | generated 路径：把零件直接写进目标包 |
+| | ⚠️ | `_source/` | 仅 shell 路径：改造一份现成 shell 包 |
 | | ⚠️ | `_parts/` | source → 目标 package 的 merge |
 | | ⚠️ | `_shell/` | 原生 ChemDraw shell 几何/预览 |
 | | ⚠️ | `_grid.py` / `_model.py` | Excel 网格度量与锚点值对象（跨子包共用） |
@@ -35,10 +36,9 @@
 writer + options          ← public
    │
    ▼
-_insert  →  _source  →  _parts   ← _ 内部（装进 Excel）
-              │            │
-         template/      surface/rels
-         (XML 细节)     (merge 细节)
+_insert ─┬─ generated → _ole_template + _insert_ole   （直写目标包）
+         ├─ shell     → _source → _parts              （改造现成 shell 包）
+         └─ picture   → _picture                      （直写，无 OLE）
 ```
 
 **semver 含义**：改 public 签名要谨慎；改 `_` 包 / `models` 只要测试绿、public 行为不变即可。
@@ -89,34 +89,25 @@ excel 与 powerpoint 互不相识；两者共用的东西放 `office/` 层，
 - `cdx.py` — `StructureSource` → 临时 `.cdx`（含 optional normalize）
 - `executor.py` — 写 CDX → 建 source → merge → 修正 layout / content types
 
-### `_source/` — 在临时小表里先装齐 OLE（merge 之前）
+### generated 路径 — `_ole_template.py` + `_insert_ole.py`
 
-**角色**：产出 `source.xlsx`，里面已经自洽地含有 `.bin` + 预览 + drawing/vml/oleObjects。  
-随后由 `_parts` merge 进用户目标表。  
-（化学格式转换在更外层；这里从 CDX 路径开始。）
+默认路径。模板是**零件供体**，不是工作目录：`ExcelOleTemplate` 一次加载取出
+容器字节、`<oleObject>` 声明、drawing 锚点、VML shape，以及新建 drawing/VML
+部件用的空外壳；`insert_ole_objects` 把它们克隆进目标包。
 
-```text
-CDX 列表 + SourceBuildRequest
-        │
-        ▼  builder（shell? → shell 路径 : generated 路径）
-source.xlsx  ──merge──►  目标 package
-```
+**为什么克隆而不是拼**：早期版本自己拼这些 XML，Excel 打开后修复文件并删掉
+OLE 对象（`docs/developer_log.md` 2026-03-06）。有模板就不该手写任何 OOXML。
 
-#### Generated 路径子步骤
+**顺序要求**：锚点由 `_grid.ExcelGridMetrics` 按目标表真实行高列宽算出，
+所以 `touch_sheet_layout` 必须在插入**之前**跑（见 `_insert/executor.py`）。
 
-| 子步骤 | 做什么 | 模块 |
-|--------|--------|------|
-| 几何 | 每行固定框 anchors | `anchors.py` |
-| B 落盘 | 克隆 OLE 壳、写 CDX、渲染预览 | `fill_parts.py` |
-| C–F | rels + drawing/vml + oleObjects + content types | `wire_surface.py` + `template/` |
-| 编排 | 解包模板 → B → C–F → 打包 | `generated.py` |
+### `_source/` — 仅 shell 路径
 
-- `builder.py` — 只认 `SourceBuildRequest`，分发 shell / generated  
-- `workbook.py` — shell 组装；generated 转调 `generated.py`  
-- `fill_parts.py` — **B** embeddings + media  
-- `wire_surface.py` — **C–F** 接线与表面 XML  
-- `template/` — generated 模板 XML 细节（common / namespaces / objects / sheet / vml / xml）  
-- `anchors.py` — 两格锚点计算  
+把一份原生 Excel+ChemDraw shell 包解包改造，留在 staging 目录里，再由
+`_parts` 搬进目标表。generated 路径已不经过这里。
+
+- `builder.py` — 认 `SourceBuildRequest`，转调 shell 组装
+- `workbook.py` — `build_source_workbook_from_shell` 与 `_fit_cdx_to_shell`
 
 ### `_shell/` — 原生 ChemDraw OLE shell（单对象 source）
 
@@ -140,17 +131,23 @@ B 写 bin → D' tighten → chrome → B+C 预览 → D 挪格 → chrome → p
 
 注意：RDKit 路径需 `.[chem]`（rdkit + pycdxml）。EMF 仍需 Inkscape。
 
-### `_parts/` — 「装进 Excel」（当前实现）
+### `_parts/` — 把 shell 的零件搬进目标表
 
-**概念上**这一步只做一件事：把已有的 `.bin` + 预览图装进目标 xlsx。  
-**实现上**零件先在临时 source 工作簿里装齐，再 merge 进目标 package（不负责 CDX/预览生成）。
+只服务 shell 路径：staging 目录里已是一套自洽的 OLE 零件，这里负责搬运并
+解决与目标表已有内容的冲突（rId 分配、shapeId 重映射、drawing/VML 合并）。
 
 ```text
-source.xlsx（已含 bin + 图 + drawing/vml/oleObjects）
+staging 目录（已含 bin + 图 + drawing/vml/oleObjects）
         │
         ▼  merge_source_workbook
 目标 package_dir
 ```
+
+两个模块**三条路径共用**，不要跟着 shell 一起挪：
+
+- `util.py` — `next_rid` / `unique_part_name` / `write_xml`
+- `anchor_overflow.py` — executor 第 7 步，把越界偏移走进真实格子
+  （generated 直写路径的锚点本来就在格内，对它是 no-op）
 
 子步骤与文件：
 
