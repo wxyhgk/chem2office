@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Generated 路径重构（进行中）
+
+- 新增 `_ole_template.ExcelOleTemplate`：一次性从内置模板抽出一个 OLE 对象所需
+  的四份零件（容器字节、`<oleObject>`、drawing 锚点、VML shape）与基准 shapeId。
+  与 PowerPoint 的 `OleFrameTemplate` 同一思路——模板是**零件供体**，不是工作目录。
+  纯新增，现有路径未改动。
+
 ### 性能
 
 - 预览图裁剪的空白检测原本是逐像素的 Python 双重循环，580×400 就要 23 万次
