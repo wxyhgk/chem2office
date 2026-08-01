@@ -9,8 +9,8 @@ from pathlib import Path
 
 from ooxml_checks import check_package
 from retain_cdx import ExcelCDXWriter
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
-from retain_cdx.office.excel._shell.grid import ExcelGridMetrics
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
+from retain_cdx.office.excel._grid import ExcelGridMetrics
 
 from test_excel_shell_layout import patch_preview_renderers
 
@@ -24,10 +24,10 @@ NS_V = "urn:schemas-microsoft-com:vml"
 def _repack(tmp_path: Path, mutate) -> Path:
     package = tmp_path / "pkg"
     package.mkdir(parents=True, exist_ok=True)
-    extract_xlsx(Path("tests/fixtures/blank.xlsx"), package)
+    extract_ooxml(Path("tests/fixtures/blank.xlsx"), package)
     mutate(package)
     target = tmp_path / "target.xlsx"
-    pack_xlsx(package, target)
+    pack_ooxml(package, target)
     return target
 
 
@@ -233,7 +233,7 @@ def test_two_point_anchor_lands_in_the_right_cell(tmp_path, monkeypatch):
 
     package = tmp_path / "unpacked"
     package.mkdir()
-    extract_xlsx(out, package)
+    extract_ooxml(out, package)
     metrics = ExcelGridMetrics.from_worksheet(
         package / "xl" / "worksheets" / "sheet1.xml"
     )

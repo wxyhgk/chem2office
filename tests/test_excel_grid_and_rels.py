@@ -9,8 +9,8 @@ import pytest
 
 from ooxml_checks import check_package
 from retain_cdx import ExcelCDXWriter
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
-from retain_cdx.office.excel._shell.grid import (
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
+from retain_cdx.office.excel._grid import (
     ExcelGridMetrics,
     base_col_width_to_px,
     excel_col_width_to_px,
@@ -25,7 +25,7 @@ NS_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
 def _unpacked(source: str, tmp_path: Path) -> Path:
     package = tmp_path / "pkg"
     package.mkdir(parents=True)
-    extract_xlsx(Path(source), package)
+    extract_ooxml(Path(source), package)
     return package
 
 
@@ -88,7 +88,7 @@ def _sheet_with_hyperlink(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     source = tmp_path / "hyperlink.xlsx"
-    pack_xlsx(package, source)
+    pack_ooxml(package, source)
     return source
 
 

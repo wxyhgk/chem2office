@@ -19,11 +19,9 @@ from .geometry import (
     read_vml_size_px,
     tighten_shell_display_box,
 )
-from .grid import ExcelGridMetrics
 from .preview import replace_shell_preview
 
 __all__ = [
-    "ExcelGridMetrics",
     "patch_shell_geometry",
     "read_vml_size_px",
     "remove_shell_ole_border",

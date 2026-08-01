@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
+from ._utils import POINTS_PER_PIXEL
 
-from .model import AnchorCorner, ShellSize, TwoCellAnchor
+from ._model import AnchorCorner, ShellSize, TwoCellAnchor
 
 
 # SpreadsheetML namespace (local sheet XML after parse).

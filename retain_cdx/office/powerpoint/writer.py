@@ -9,8 +9,8 @@ from retain_cdx.render.preview import preview_extension, render_preview
 from retain_cdx.resources import bundled_template_pptx
 from retain_cdx.structure import StructureSource
 
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
-from retain_cdx.office.excel._utils import parse_emu
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
+from retain_cdx.office._units import parse_emu
 
 from ._pml import (
     FramePlacement,
@@ -53,14 +53,14 @@ class PowerPointCDXWriter:
         self._tmp = tempfile.TemporaryDirectory(prefix="retain_cdx_pptx_")
         self.package_dir = Path(self._tmp.name) / "package"
         self.package_dir.mkdir()
-        extract_xlsx(Path(input_pptx), self.package_dir)
+        extract_ooxml(Path(input_pptx), self.package_dir)
         self._template = self._load_frame_template()
 
     def _load_frame_template(self) -> OleFrameTemplate:
         with tempfile.TemporaryDirectory(prefix="retain_cdx_pptx_tpl_") as tmp:
             template_dir = Path(tmp)
             with bundled_template_pptx() as template:
-                extract_xlsx(template, template_dir)
+                extract_ooxml(template, template_dir)
             return OleFrameTemplate.from_package(template_dir)
 
     def close(self) -> None:
@@ -82,7 +82,7 @@ class PowerPointCDXWriter:
         return slide_size(self.package_dir)
 
     def save(self, output_pptx: str | Path) -> None:
-        pack_xlsx(self.package_dir, Path(output_pptx))
+        pack_ooxml(self.package_dir, Path(output_pptx))
 
     def insert_cdx(
         self,

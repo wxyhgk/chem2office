@@ -12,8 +12,8 @@ import re
 
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
 
-from .grid import ExcelGridMetrics
-from .model import AnchorCorner, ShellSize, TwoCellAnchor
+from .._grid import ExcelGridMetrics
+from .._model import AnchorCorner, ShellSize, TwoCellAnchor
 from .ooxml_patch import patch_first_drawing_anchor
 from .vml import patch_vml_shape, read_vml_shell_size, read_vml_size_px
 

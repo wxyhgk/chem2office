@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from retain_cdx.office.excel._utils import parse_emu
-from retain_cdx.office.excel.options import PreviewOptions
+from retain_cdx.office._units import parse_emu
+from retain_cdx.office.options import PreviewOptions
 
 Length = int | float | str
 

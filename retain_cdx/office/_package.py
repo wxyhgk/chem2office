@@ -1,3 +1,9 @@
+"""Zip in / zip out for OOXML packages — format agnostic.
+
+Every OOXML file is a ZIP; Excel, PowerPoint and Word all share this step,
+so it lives above the per-format packages.
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,19 +11,19 @@ import zipfile
 from pathlib import Path
 
 
-def extract_xlsx(xlsx_path: Path, output_dir: Path) -> None:
-    """Extract an XLSX package into *output_dir*."""
+def extract_ooxml(package_path: Path, output_dir: Path) -> None:
+    """Extract any OOXML package (.xlsx / .pptx / .docx) into *output_dir*."""
     output_root = output_dir.resolve()
-    with zipfile.ZipFile(xlsx_path, "r") as z:
+    with zipfile.ZipFile(package_path, "r") as z:
         for member in z.infolist():
             target = (output_dir / member.filename).resolve()
             if target != output_root and output_root not in target.parents:
-                raise ValueError(f"Unsafe XLSX member path: {member.filename}")
+                raise ValueError(f"Unsafe OOXML member path: {member.filename}")
             z.extract(member, output_dir)
 
 
-def pack_xlsx(package_dir: Path, output: Path) -> None:
-    """Pack *package_dir* contents into an XLSX file."""
+def pack_ooxml(package_dir: Path, output: Path) -> None:
+    """Pack *package_dir* contents into an OOXML file."""
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
 from retain_cdx.structure import StructureSource
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._insert import build_insert_plan, execute_insert
 from retain_cdx.office.excel._insert.cdx import write_cdx_sources
 from retain_cdx.office.excel._insert.executor import (
@@ -14,8 +15,6 @@ from retain_cdx.office.excel._insert.executor import (
 )
 from retain_cdx.office.excel._picture import insert_structure_pictures
 from retain_cdx.office.excel._ooxml import (
-    extract_xlsx,
-    pack_xlsx,
     parse_workbook_sheets,
     set_inline_cell_text,
     touch_sheet_layout,
@@ -32,7 +31,7 @@ class ExcelCDXWriter:
         self._tmp = tempfile.TemporaryDirectory(prefix="retain_cdx_excel_")
         self.package_dir = Path(self._tmp.name) / "workbook"
         self.package_dir.mkdir()
-        extract_xlsx(self.input_xlsx, self.package_dir)
+        extract_ooxml(self.input_xlsx, self.package_dir)
 
     def close(self) -> None:
         self._tmp.cleanup()
@@ -44,7 +43,7 @@ class ExcelCDXWriter:
         self.close()
 
     def save(self, output_xlsx: str | Path) -> None:
-        pack_xlsx(self.package_dir, Path(output_xlsx))
+        pack_ooxml(self.package_dir, Path(output_xlsx))
 
     def insert_pictures_many(
         self,

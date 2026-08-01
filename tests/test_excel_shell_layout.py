@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 import retain_cdx.office.excel._shell.preview as shell_preview
 import retain_cdx.office.excel._source.fill_parts as fill_parts
 from retain_cdx import ExcelCDXWriter, ShellTemplate, StructureSource
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.render.preview import inkscape_available, resolve_preview_format
 from PIL import Image
 import pytest
@@ -106,7 +106,7 @@ def _wants_emf(fmt: str, available: bool) -> bool:
 def add_inline_text(xlsx_path: Path, output: Path, cell_ref: str, text_value: str) -> None:
     package_dir = output.with_suffix("")
     package_dir.mkdir()
-    extract_xlsx(xlsx_path, package_dir)
+    extract_ooxml(xlsx_path, package_dir)
 
     sheet_path = package_dir / "xl" / "worksheets" / "sheet1.xml"
     tree = ET.parse(sheet_path)
@@ -122,7 +122,7 @@ def add_inline_text(xlsx_path: Path, output: Path, cell_ref: str, text_value: st
     text = ET.SubElement(inline, f"{{{NS_MAIN}}}t")
     text.text = text_value
     tree.write(sheet_path, encoding="UTF-8", xml_declaration=True)
-    pack_xlsx(package_dir, output)
+    pack_ooxml(package_dir, output)
 
 
 def read_zip_xml(xlsx_path: Path, member: str) -> ET.Element:
@@ -153,17 +153,17 @@ def test_public_api_exports() -> None:
     assert StructureSource.from_cdx("tests/fixtures/test.cdx").cdx_data
 
 
-def test_extract_xlsx_rejects_unsafe_member(tmp_path: Path) -> None:
+def test_extract_ooxml_rejects_unsafe_member(tmp_path: Path) -> None:
     unsafe = tmp_path / "unsafe.xlsx"
     with zipfile.ZipFile(unsafe, "w") as z:
         z.writestr("../escape.txt", "bad")
 
     try:
-        extract_xlsx(unsafe, tmp_path / "out")
+        extract_ooxml(unsafe, tmp_path / "out")
     except ValueError as exc:
-        assert "Unsafe XLSX member path" in str(exc)
+        assert "Unsafe OOXML member path" in str(exc)
     else:
-        raise AssertionError("unsafe XLSX member was not rejected")
+        raise AssertionError("unsafe OOXML member was not rejected")
 
 
 def test_generated_insert_path_preserves_cells_and_applies_layout(
@@ -390,7 +390,7 @@ def test_insert_preserves_existing_sheet_relationships(
     target = tmp_path / "target.xlsx"
     package_dir = tmp_path / "target_package"
     package_dir.mkdir()
-    extract_xlsx(Path("tests/fixtures/blank.xlsx"), package_dir)
+    extract_ooxml(Path("tests/fixtures/blank.xlsx"), package_dir)
     rels_path = package_dir / "xl" / "worksheets" / "_rels" / "sheet1.xml.rels"
     rels_path.parent.mkdir(parents=True)
     rels_path.write_text(
@@ -401,7 +401,7 @@ def test_insert_preserves_existing_sheet_relationships(
 """,
         encoding="utf-8",
     )
-    pack_xlsx(package_dir, target)
+    pack_ooxml(package_dir, target)
 
     output = tmp_path / "output.xlsx"
     with ExcelCDXWriter(target) as writer:
@@ -439,7 +439,7 @@ def test_shell_insert_preserves_existing_sheet_cells(tmp_path: Path) -> None:
 
     output_dir = tmp_path / "output_package"
     output_dir.mkdir()
-    extract_xlsx(output, output_dir)
+    extract_ooxml(output, output_dir)
     output_sheet = ET.parse(output_dir / "xl" / "worksheets" / "sheet1.xml").getroot()
 
     kept_text = output_sheet.find(".//s:c[@r='A1']/s:is/s:t", NS)

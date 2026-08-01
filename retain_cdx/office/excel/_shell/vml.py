@@ -5,7 +5,7 @@ import re
 
 from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
 
-from .model import ShellSize, TwoCellAnchor
+from .._model import ShellSize, TwoCellAnchor
 
 
 def read_vml_size_px(vml_text: str) -> tuple[int, int]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
+from retain_cdx.office.options import PreviewOptions
 
 from ._utils import parse_px
 
@@ -55,21 +55,6 @@ class Placement:
     @property
     def to_offset_y_px(self) -> int:
         return parse_px(self.to_offset_y)
-
-
-@dataclass(frozen=True)
-class PreviewOptions:
-    width: int | None = None
-    height: int | None = None
-    thick_lines: bool = False
-    no_margin: bool = False
-    mono: bool = True
-    # "png" default; "emf" uses SVG + Inkscape; "auto" prefers emf when available.
-    format: PreviewFormat = "png"
-    # "auto" prefers RDKit ACS1996, then Open Babel.
-    backend: PreviewBackend = "auto"
-    # RDKit drawing style; ACS1996 is monochrome journal style.
-    style: PreviewStyle = "acs1996"
 
 
 @dataclass(frozen=True)

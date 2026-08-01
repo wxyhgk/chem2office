@@ -1,4 +1,8 @@
-from __future__ import annotations
+"""Length units shared by the OOXML formats.
+
+EMU is the universal OOXML unit; pixels and points are how Excel talks
+about its grid. PresentationML positions purely in EMU.
+"""
 
 import re
 

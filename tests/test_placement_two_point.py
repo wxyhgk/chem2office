@@ -17,7 +17,7 @@ from PIL import Image
 import retain_cdx.office.excel._shell.preview as shell_preview
 import retain_cdx.office.excel._source.fill_parts as fill_parts
 from retain_cdx import ExcelCDXWriter, Placement, ShellTemplate
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
 
 CDX = Path("tests/fixtures/test.cdx")
@@ -68,13 +68,13 @@ def default_grid_workbook(tmp_path: Path) -> Path:
     target = tmp_path / "default_grid.xlsx"
     package = tmp_path / "default_grid_pkg"
     package.mkdir()
-    extract_xlsx(BLANK, package)
+    extract_ooxml(BLANK, package)
     sheet = package / "xl" / "worksheets" / "sheet1.xml"
     text = sheet.read_text(encoding="utf-8")
     stripped = re.sub(r"<sheetFormatPr[^>]*/>", "", text)
     assert stripped != text  # fixture must have carried a sheetFormatPr
     sheet.write_text(stripped, encoding="utf-8")
-    pack_xlsx(package, target)
+    pack_ooxml(package, target)
     return target
 
 
@@ -132,13 +132,13 @@ def grid_metrics(workbook: Path):
     """ExcelGridMetrics for the saved workbook's first sheet."""
     import tempfile
 
-    from retain_cdx.office.excel._ooxml import extract_xlsx
-    from retain_cdx.office.excel._shell import ExcelGridMetrics
+    from retain_cdx.office._package import extract_ooxml
+    from retain_cdx.office.excel._grid import ExcelGridMetrics
 
     with tempfile.TemporaryDirectory() as tmp:
         package = Path(tmp) / "pkg"
         package.mkdir()
-        extract_xlsx(workbook, package)
+        extract_ooxml(workbook, package)
         return ExcelGridMetrics.from_worksheet(
             package / "xl" / "worksheets" / "sheet1.xml"
         )

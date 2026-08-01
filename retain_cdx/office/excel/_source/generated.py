@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from retain_cdx.resources import bundled_template_xlsx
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel.models import PreviewSpec
 
 from .anchors import OleAnchor, compute_anchors
@@ -90,7 +90,7 @@ def _assemble_source_package(
     register_namespaces()
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
-        extract_xlsx(template, tmpdir)
+        extract_ooxml(template, tmpdir)
 
         sheet_path = tmpdir / "xl" / "worksheets" / "sheet1.xml"
         shared_strings_path = tmpdir / "xl" / "sharedStrings.xml"
@@ -117,4 +117,4 @@ def _assemble_source_package(
             object_count=len(cdx_paths),
         )
 
-        pack_xlsx(tmpdir, output)
+        pack_ooxml(tmpdir, output)

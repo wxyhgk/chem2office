@@ -13,7 +13,7 @@ from retain_cdx.ole.embed import write_cdx_to_ole
 from retain_cdx.render.preview import resolve_preview_format
 from retain_cdx.structure.geometry import cdx_content_aspect
 
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._shell import (
     patch_shell_geometry,
     read_vml_size_px,
@@ -108,7 +108,7 @@ def build_source_workbook_from_shell(
     with tempfile.TemporaryDirectory(prefix="retain_cdx_shell_") as tmp:
         package_dir = Path(tmp) / "package"
         package_dir.mkdir()
-        extract_xlsx(shell.path, package_dir)
+        extract_ooxml(shell.path, package_dir)
 
         embeddings = sorted((package_dir / "xl" / "embeddings").glob("*.bin"))
         if not embeddings:
@@ -147,7 +147,7 @@ def build_source_workbook_from_shell(
 
         # Geometry rewrite can reintroduce template stroke attrs; clear again.
         remove_shell_ole_border(package_dir)
-        pack_xlsx(package_dir, output)
+        pack_ooxml(package_dir, output)
 
 
 def _fit_cdx_to_shell(cdx_path: Path, package_dir: Path) -> Path:

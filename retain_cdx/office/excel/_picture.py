@@ -33,8 +33,8 @@ from retain_cdx.office.excel._ooxml import (
 )
 from retain_cdx.office.excel._ooxml.xml_io import NS, NS_MAIN
 from retain_cdx.office.excel._parts.util import next_rid, unique_part_name
-from retain_cdx.office.excel._shell import ExcelGridMetrics
-from retain_cdx.office.excel._shell.model import ShellSize
+from retain_cdx.office.excel._grid import ExcelGridMetrics
+from retain_cdx.office.excel._model import ShellSize
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
 from retain_cdx.office.excel.models import LayoutSpec, PreviewSpec
 

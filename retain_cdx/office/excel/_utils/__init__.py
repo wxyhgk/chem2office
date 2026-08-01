@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .address import col_to_index, index_to_col, parse_cell
-from .units import (
+from retain_cdx.office._units import (
     EMU_PER_INCH,
     EMU_PER_PIXEL,
     POINTS_PER_PIXEL,

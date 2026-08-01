@@ -21,14 +21,14 @@ from retain_cdx.structure import StructureSource
 
 from retain_cdx.office.excel._ooxml import (
     ensure_ole_drawing_content_types,
-    extract_xlsx,
     parse_workbook_sheets,
     sheet_index_from_path,
     touch_sheet_layout,
 )
+from retain_cdx.office._package import extract_ooxml
 from retain_cdx.office.excel._parts import merge_source_workbook
 from retain_cdx.office.excel._parts.anchor_overflow import normalize_anchor_overflow
-from retain_cdx.office.excel._shell import ExcelGridMetrics
+from retain_cdx.office.excel._grid import ExcelGridMetrics
 from retain_cdx.office.excel._source import build_source_workbook
 from retain_cdx.office.excel._utils import parse_cell, px_to_points
 
@@ -70,7 +70,7 @@ def execute_insert(
         # 4. place: copy bin/media/surface from source → user package_dir
         source_dir = tmpdir / "source"
         source_dir.mkdir()
-        extract_xlsx(source_xlsx, source_dir)
+        extract_ooxml(source_xlsx, source_dir)
         drawing_name = merge_source_workbook(
             package_dir,
             source_dir,

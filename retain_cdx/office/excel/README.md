@@ -21,7 +21,12 @@
 | | ⚠️ | `_source/template/` | generated 模板的 XML 细节抽屉 |
 | | ⚠️ | `_parts/` | source → 目标 package 的 merge |
 | | ⚠️ | `_shell/` | 原生 ChemDraw shell 几何/预览 |
-| | ⚠️ | `_ooxml/` / `_utils/` | ZIP/XML/单位底层 |
+| | ⚠️ | `_grid.py` / `_model.py` | Excel 网格度量与锚点值对象（跨子包共用） |
+| | ⚠️ | `_picture.py` | 图片模式（不放 OLE） |
+| | ⚠️ | `_ooxml/` / `_utils/` | XML / A1 地址底层 |
+| **office 层共享** | ⚠️ | `office/_package.py` | OOXML 通用解包/打包（Excel 与 PPT 共用） |
+| | ⚠️ | `office/_units.py` | 长度单位（EMU/px/pt） |
+| | ✅ | `office/options.py` | `PreviewOptions`（与格式无关） |
 
 ```text
 用户代码
@@ -46,6 +51,9 @@ _insert  →  _source  →  _parts   ← _ 内部（装进 Excel）
   （写结构旁边的 ID/表头等文本、调格子尺寸，
   **不要**用 openpyxl 后处理 —— 它会丢 OLE parts）  
 - `insert_pictures_many()` — **图片模式**：只放图不放 OLE（见下）  
+- `options.py` — 用户可见 dataclass  
+
+不要在 `writer` 里堆预览、VML、OLE 二进制细节。
 
 ### 图片模式 `_picture.py`
 
@@ -53,10 +61,7 @@ _insert  →  _source  →  _parts   ← _ 内部（装进 Excel）
 不产生 embeddings / VML / oleObjects。上千个 OLE 对象会拖垮 Excel（每个都带
 CFBF 容器、VML 形状和激活机制），图片则很轻，单表可装几千个结构。
 代价：不能双击进 ChemDraw 编辑。锚点按目标 sheet 真实网格计算
-（复用 `_shell/grid.py` 的 `ExcelGridMetrics`），目标已有 drawing 时追加进去。
-- `options.py` — 用户可见 dataclass  
-
-不要在 `writer` 里堆预览、VML、OLE 二进制细节。
+（复用 `_grid.py` 的 `ExcelGridMetrics`），目标已有 drawing 时追加进去。
 
 ## 内部子包
 
@@ -66,6 +71,8 @@ CFBF 容器、VML 形状和激活机制），图片则很轻，单表可装几�
 writer → _insert (pipeline) → _source / _parts
                 ↘ models ↙
 _source 与 _parts 不得 import _insert。
+excel 与 powerpoint 互不相识；两者共用的东西放 `office/` 层，
+**不允许**跨格式 import 对方的 `_` 私有模块。
 ```
 
 `models.py`（无 `_` 前缀，**仍是内部**）：
@@ -126,7 +133,7 @@ source.xlsx  ──merge──►  目标 package
 - `geometry.py` — `tighten_shell_display_box`、`patch_shell_geometry`（`read_vml_size_px` 定义在 `vml.py`）  
 - `chrome.py` — 仅 `remove_shell_ole_border`  
 - `media_rels.py` — image rId / Target  
-- 底层：`model` / `grid` / `vml` / `ooxml_patch`  
+- 底层：`vml` / `ooxml_patch`（`_grid` / `_model` 已提到 excel 顶层，因为 `_insert`、`_parts`、`_picture` 都要用）  
 
 **Shell 路径的编排在 `_source/workbook.py`**（顺序显式）：  
 B 写 bin → D' tighten → chrome → B+C 预览 → D 挪格 → chrome → pack。
@@ -165,8 +172,6 @@ source.xlsx（已含 bin + 图 + drawing/vml/oleObjects）
 
 负责底层 Open XML / XLSX 操作。
 
-- `package.py`
-  解包和重新打包 `.xlsx`。
 
 - `content_types.py`
   修正 `[Content_Types].xml`，确保 PNG、OLE bin、VML drawing、drawing XML 等类型存在。
@@ -188,10 +193,10 @@ source.xlsx（已含 bin + 图 + drawing/vml/oleObjects）
 小型工具函数。
 
 - `address.py`
-  解析 Excel 单元格地址，处理列号转换。
+  解析 Excel 单元格地址，处理列号转换（A1 记法是表格专属，所以留在这里）。
 
-- `units.py`
-  处理 px / pt / EMU 等单位转换。
+单位换算已上移到 `office/_units.py`（EMU/px/pt 是 OOXML 通用的，PPT 也要用）；
+`_utils` 仍 re-export，内部 import 不受影响。
 
 ## 推荐依赖方向
 
@@ -200,11 +205,11 @@ source.xlsx（已含 bin + 图 + drawing/vml/oleObjects）
 ```text
 writer
   -> _insert
-  -> _source
+  -> _source / _parts / _picture
   -> _shell
-  -> _parts
-  -> _ooxml
-  -> _utils
+  -> _grid / _model        （网格度量与锚点值对象）
+  -> _ooxml / _utils
+  -> office/_package, office/_units   （跨格式共享）
 ```
 
 基本原则：
@@ -226,14 +231,13 @@ writer
 from retain_cdx.office.excel._insert import build_insert_plan, write_cdx_sources
 from retain_cdx.office.excel._source import build_source_workbook
 from retain_cdx.office.excel._parts import merge_source_workbook
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 ```
 
 不要在 `writer.py` 里到处导入具体文件：
 
 ```python
 # 尽量避免
-from retain_cdx.office.excel._ooxml.package import extract_xlsx
 from retain_cdx.office.excel._ooxml.workbook import parse_workbook_sheets
 ```
 

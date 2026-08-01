@@ -8,7 +8,7 @@ import zipfile
 import pytest
 
 from retain_cdx import ExcelCDXWriter
-from retain_cdx.office.excel._ooxml import extract_xlsx, pack_xlsx
+from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._ooxml.xml_io import (
     WORKSHEET_CHILD_ORDER,
     local_name,
@@ -39,7 +39,7 @@ def _add_trailing_page_parts(source: Path, target: Path, tmp_path: Path) -> None
     """Give a sheet the pageSetup/headerFooter that real Excel files carry."""
     package = tmp_path / "unpacked"
     package.mkdir()
-    extract_xlsx(source, package)
+    extract_ooxml(source, package)
     sheet_path = package / "xl" / "worksheets" / "sheet1.xml"
     text = sheet_path.read_text(encoding="utf-8")
     assert "<pageSetup" not in text
@@ -51,7 +51,7 @@ def _add_trailing_page_parts(source: Path, target: Path, tmp_path: Path) -> None
     )
     text = text.replace("</worksheet>", f"{extra}</worksheet>")
     sheet_path.write_text(text, encoding="utf-8")
-    pack_xlsx(package, target)
+    pack_ooxml(package, target)
 
 
 def test_insert_keeps_page_setup_before_drawing(tmp_path, monkeypatch):
@@ -96,7 +96,7 @@ def test_plain_sheet_insert_order_is_legal(tmp_path, monkeypatch):
 def test_set_cell_texts_dimension_lands_after_sheet_pr(tmp_path):
     package = tmp_path / "pkg"
     package.mkdir()
-    extract_xlsx(Path("tests/fixtures/blank.xlsx"), package)
+    extract_ooxml(Path("tests/fixtures/blank.xlsx"), package)
     sheet_path = package / "xl" / "worksheets" / "sheet1.xml"
     text = sheet_path.read_text(encoding="utf-8")
     # Strip dimension so the writer has to create one; the fixture already
@@ -106,7 +106,7 @@ def test_set_cell_texts_dimension_lands_after_sheet_pr(tmp_path):
     assert "<sheetPr>" in text
     sheet_path.write_text(text, encoding="utf-8")
     stripped = tmp_path / "stripped.xlsx"
-    pack_xlsx(package, stripped)
+    pack_ooxml(package, stripped)
 
     out = tmp_path / "cells.xlsx"
     with ExcelCDXWriter(stripped) as writer:

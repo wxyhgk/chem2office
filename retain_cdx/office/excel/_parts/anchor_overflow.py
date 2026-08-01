@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 
 from retain_cdx.office.excel._ooxml import NS_XDR, write_sheet_xml
 from retain_cdx.office.excel._ooxml.xml_io import NS
-from retain_cdx.office.excel._shell import ExcelGridMetrics
+from retain_cdx.office.excel._grid import ExcelGridMetrics
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
 
 from .util import write_xml

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from retain_cdx.office.excel._utils import EMU_PER_PIXEL
+from ._utils import EMU_PER_PIXEL
 
 
 @dataclass(frozen=True)
