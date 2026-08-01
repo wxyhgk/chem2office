@@ -8,6 +8,14 @@
   的四份零件（容器字节、`<oleObject>`、drawing 锚点、VML shape）与基准 shapeId。
   与 PowerPoint 的 `OleFrameTemplate` 同一思路——模板是**零件供体**，不是工作目录。
   纯新增，现有路径未改动。
+- generated 路径改为**直接写入目标 package**（`_insert_ole.insert_ole_objects`），
+  不再经过 staging 工作簿与 `_parts` 搬运。产出与旧路径逐部件比对一致，
+  唯一差异是 VML 的 `margin-left/top`——旧值由「均匀行高」的幻想网格算出
+  （B2 的对象写成 `margin-top:110pt`，真实是 15pt），新值按目标表真实网格算。
+  Excel 用 `x:Anchor` 定位所以看不出来，但按 style 摆放的消费者会错位。
+- 顺带要求：直写路径的锚点依赖目标网格，所以行高列宽必须**先**落到目标表上
+  （旧路径写的是「同格 + 字面偏移」，与网格无关，才可以后调）。
+- shell 路径不变，仍走 staging——它改的是一整份现成的 shell 包，模型不同。
 
 ### 性能
 

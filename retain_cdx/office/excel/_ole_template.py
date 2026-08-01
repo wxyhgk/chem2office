@@ -49,6 +49,8 @@ class ExcelOleTemplate:
     ole_object_xml: str      # <mc:AlternateContent> 包着的 <oleObject>
     drawing_anchor_xml: str  # <xdr:twoCellAnchor>
     vml_shape_xml: str       # <v:shape>
+    drawing_shell_xml: str   # 空的 wsDr（含 a14 的 AlternateContent 包装）
+    vml_shell_xml: str       # 空的 VML 根（含 shapetype 定义）
     base_shape_id: int
     from_row: int
     to_row: int
@@ -82,8 +84,20 @@ class ExcelOleTemplate:
         if vml_shape is None:
             raise ValueError(f"模板 {_TEMPLATE_VML} 里没有 v:shape")
 
+        # 外壳 = 去掉具体对象之后的骨架，新建部件时克隆它，
+        # 而不是手写 —— 手写 XML 正是当年被 Excel 修复的原因。
+        drawing_shell = ET.fromstring(ET.tostring(drawing_root, encoding="unicode"))
+        for choice in drawing_shell.findall("mc:AlternateContent/mc:Choice", NS):
+            for existing in list(choice.findall("xdr:twoCellAnchor", NS)):
+                choice.remove(existing)
+        vml_shell = ET.fromstring(ET.tostring(vml_root, encoding="unicode"))
+        for shape in list(vml_shell.findall(f"{{{NS_V}}}shape")):
+            vml_shell.remove(shape)
+
         return cls(
             container=(package_dir / _TEMPLATE_EMBEDDING).read_bytes(),
+            drawing_shell_xml=ET.tostring(drawing_shell, encoding="unicode"),
+            vml_shell_xml=ET.tostring(vml_shell, encoding="unicode"),
             ole_object_xml=ET.tostring(ole_alt, encoding="unicode"),
             drawing_anchor_xml=ET.tostring(drawing_anchor, encoding="unicode"),
             vml_shape_xml=ET.tostring(vml_shape, encoding="unicode"),
@@ -113,6 +127,12 @@ class ExcelOleTemplate:
 
     def new_vml_shape(self) -> ET.Element:
         return ET.fromstring(self.vml_shape_xml)
+
+    def new_drawing_shell(self) -> ET.Element:
+        return ET.fromstring(self.drawing_shell_xml)
+
+    def new_vml_shell(self) -> ET.Element:
+        return ET.fromstring(self.vml_shell_xml)
 
 
 def _row(anchor: ET.Element, corner: str) -> int:

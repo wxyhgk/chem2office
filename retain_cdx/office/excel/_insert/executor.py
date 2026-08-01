@@ -25,6 +25,8 @@ from retain_cdx.office.excel._ooxml import (
     sheet_index_from_path,
     touch_sheet_layout,
 )
+from retain_cdx.office.excel._insert_ole import insert_ole_objects
+from retain_cdx.office.excel._ole_template import ExcelOleTemplate
 from retain_cdx.office.excel._parts import merge_source_workbook
 from retain_cdx.office.excel._parts.anchor_overflow import normalize_anchor_overflow
 from retain_cdx.office.excel._grid import ExcelGridMetrics
@@ -62,39 +64,33 @@ def execute_insert(
         # 2. temporary CDX files (chem payload on disk)
         cdx_paths = write_cdx_sources(sources, tmpdir, plan)
 
-        # 3. assemble the OLE parts in a staging directory (never zipped —
-        #    packing then immediately re-extracting was pure overhead)
-        source_dir = tmpdir / "source"
-        build_source_workbook(cdx_paths, source_dir, plan.to_source_request())
-
-        # 4. place: copy bin/media/surface from source → user package_dir
-        drawing_name = merge_source_workbook(
-            package_dir,
-            source_dir,
-            sheet_path=target_sheet.path,
-            sheet_idx=target_sheet.index,
-            prefix=target_sheet.prefix,
-            preserve_object_pr=plan.has_shell,
-            copy_layout=plan.has_shell,
-        )
-
-    # 5. layout (generated path only — shell may copy layout in merge).
-    # Two-point placements never reshape the grid: the box was resolved
-    # against the existing rows/cols and must keep matching them.
-    layout = plan.layout
-    if (
-        not plan.has_shell
-        and plan.placement.to_cell is None
-        and (layout.row_height is not None or layout.col_width is not None)
-    ):
-        touch_sheet_layout(
-            target_sheet.path,
-            col=layout.col,
-            start_row=layout.row,
-            count=len(sources),
-            row_height=layout.row_height,
-            col_width=layout.col_width,
-        )
+        if plan.has_shell:
+            # Shell 路径仍走 staging：它改的是一整份现成的 shell 包，
+            # 不是往目标里拼零件。
+            source_dir = tmpdir / "source"
+            build_source_workbook(cdx_paths, source_dir, plan.to_source_request())
+            drawing_name = merge_source_workbook(
+                package_dir,
+                source_dir,
+                sheet_path=target_sheet.path,
+                sheet_idx=target_sheet.index,
+                prefix=target_sheet.prefix,
+                preserve_object_pr=True,
+                copy_layout=True,
+            )
+        else:
+            # 3. 先把网格调好——锚点要按目标表的真实行高列宽算。
+            _apply_layout(target_sheet.path, plan, len(sources))
+            # 4. 直接把零件写进目标包（模板只作片段供体）
+            drawing_name = insert_ole_objects(
+                package_dir,
+                cdx_paths,
+                sheet_path=target_sheet.path,
+                prefix=target_sheet.prefix,
+                template=ExcelOleTemplate.bundled(),
+                layout=plan.layout,
+                preview=plan.preview,
+            )
 
     # 6. content types for OLE drawing / media parts
     ensure_ole_drawing_content_types(package_dir, drawing_name)
@@ -106,6 +102,28 @@ def execute_insert(
         target_sheet.path,
         drawings / drawing_name,
         next(iter(sorted(drawings.glob(f"{target_sheet.prefix}*.vml"))), None),
+    )
+
+
+def _apply_layout(sheet_path: Path, plan: InsertPlan, count: int) -> None:
+    """行高列宽先落到目标表上。
+
+    直写路径的锚点由 `ExcelGridMetrics` 按真实网格算出，所以网格必须先就位；
+    旧的 staging 路径写的是「同格 + 字面偏移」，与网格无关，才可以后调。
+    两点锚不动网格：框本来就是照现有行列解析出来的。
+    """
+    layout = plan.layout
+    if plan.placement.to_cell is not None:
+        return
+    if layout.row_height is None and layout.col_width is None:
+        return
+    touch_sheet_layout(
+        sheet_path,
+        col=layout.col,
+        start_row=layout.row,
+        count=count,
+        row_height=layout.row_height,
+        col_width=layout.col_width,
     )
 
 
