@@ -1,7 +1,7 @@
 """Source workbook entry points: generated multi-OLE vs native shell.
 
-Both paths produce a temporary source.xlsx that already contains a complete
-OLE assembly; ``_parts.merge`` then places it into the user workbook.
+Both paths leave a **解包状态**的 source 目录，里面已是一套自洽的 OLE 零件；
+``_parts.merge`` 再把它搬进用户表。（早先会先打包成 xlsx 再立刻解开。）
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from retain_cdx.ole.embed import write_cdx_to_ole
 from retain_cdx.render.preview import resolve_preview_format
 from retain_cdx.structure.geometry import cdx_content_aspect
 
-from retain_cdx.office._package import extract_ooxml, pack_ooxml
+from retain_cdx.office._package import extract_ooxml
 from retain_cdx.office.excel._shell import (
     patch_shell_geometry,
     read_vml_size_px,
@@ -29,7 +29,7 @@ from .generated import build_generated_source_workbook
 
 def build_source_ole_workbook(
     cdx_paths: list[Path],
-    output: Path,
+    source_dir: Path,
     *,
     layout: LayoutSpec,
     preview: PreviewSpec,
@@ -65,7 +65,7 @@ def build_source_ole_workbook(
     )
     build_generated_source_workbook(
         cdx_paths,
-        output,
+        source_dir,
         col=index_to_col(layout.col),
         start_row=layout.row,
         margin_left=f"{offset_x_pt}pt",
@@ -79,7 +79,7 @@ def build_source_ole_workbook(
 
 def build_source_workbook_from_shell(
     cdx_path: Path,
-    output: Path,
+    source_dir: Path,
     *,
     layout: LayoutSpec,
     shell: ShellSourceOptions,
@@ -95,59 +95,54 @@ def build_source_workbook_from_shell(
       B+C render preview + wire image rels
       D   optional move/resize into target cell
       chrome  border again (geometry rewrite may restore stroke)
-      pack
     """
-    import tempfile
-
     # Shell options gate how much of the layout box is applied.
     start_col = layout.col if shell.allow_resize else None
     start_row = layout.row if shell.allow_resize else None
     width_px = layout.width_px if shell.resize_display else None
     height_px = layout.height_px if shell.resize_display else None
 
-    with tempfile.TemporaryDirectory(prefix="retain_cdx_shell_") as tmp:
-        package_dir = Path(tmp) / "package"
-        package_dir.mkdir()
-        extract_ooxml(shell.path, package_dir)
+    package_dir = source_dir
+    package_dir.mkdir(parents=True, exist_ok=True)
+    extract_ooxml(shell.path, package_dir)
 
-        embeddings = sorted((package_dir / "xl" / "embeddings").glob("*.bin"))
-        if not embeddings:
-            raise ValueError(f"Shell template has no OLE embedding: {shell.path}")
+    embeddings = sorted((package_dir / "xl" / "embeddings").glob("*.bin"))
+    if not embeddings:
+        raise ValueError(f"Shell template has no OLE embedding: {shell.path}")
 
-        # B: OLE payload
-        if shell.fit_cdx:
-            cdx_path = _fit_cdx_to_shell(cdx_path, package_dir)
-        write_cdx_to_ole(embeddings[0], cdx_path, stream_name="CONTENTS")
+    # B: OLE payload
+    if shell.fit_cdx:
+        cdx_path = _fit_cdx_to_shell(cdx_path, package_dir)
+    write_cdx_to_ole(embeddings[0], cdx_path, stream_name="CONTENTS")
 
-        # D': hug molecule aspect before drawing the preview
-        content_aspect = cdx_content_aspect(Path(cdx_path).read_bytes())
-        if content_aspect and content_aspect > 0:
-            tighten_shell_display_box(package_dir, content_aspect=content_aspect)
+    # D': hug molecule aspect before drawing the preview
+    content_aspect = cdx_content_aspect(Path(cdx_path).read_bytes())
+    if content_aspect and content_aspect > 0:
+        tighten_shell_display_box(package_dir, content_aspect=content_aspect)
 
-        # chrome before preview so art matches a clean frame
-        remove_shell_ole_border(package_dir)
+    # chrome before preview so art matches a clean frame
+    remove_shell_ole_border(package_dir)
 
-        # B+C: preview media + image relationships (no geometry/chrome inside)
-        replace_shell_preview(cdx_path, package_dir, preview=preview)
+    # B+C: preview media + image relationships (no geometry/chrome inside)
+    replace_shell_preview(cdx_path, package_dir, preview=preview)
 
-        # D: pin position / size when caller allows resize
-        if start_col is not None and start_row is not None:
-            patch_shell_geometry(
-                package_dir,
-                start_col=start_col,
-                start_row=start_row,
-                offset_x_px=layout.offset_x_px,
-                offset_y_px=layout.offset_y_px,
-                width_px=width_px,
-                height_px=height_px,
-                preserve_aspect=shell.preserve_aspect,
-                # Auto-center when caller did not supply an explicit in-cell offset.
-                center_in_cell=(layout.offset_x_px == 0 and layout.offset_y_px == 0),
-            )
+    # D: pin position / size when caller allows resize
+    if start_col is not None and start_row is not None:
+        patch_shell_geometry(
+            package_dir,
+            start_col=start_col,
+            start_row=start_row,
+            offset_x_px=layout.offset_x_px,
+            offset_y_px=layout.offset_y_px,
+            width_px=width_px,
+            height_px=height_px,
+            preserve_aspect=shell.preserve_aspect,
+            # Auto-center when caller did not supply an explicit in-cell offset.
+            center_in_cell=(layout.offset_x_px == 0 and layout.offset_y_px == 0),
+        )
 
-        # Geometry rewrite can reintroduce template stroke attrs; clear again.
-        remove_shell_ole_border(package_dir)
-        pack_ooxml(package_dir, output)
+    # Geometry rewrite can reintroduce template stroke attrs; clear again.
+    remove_shell_ole_border(package_dir)
 
 
 def _fit_cdx_to_shell(cdx_path: Path, package_dir: Path) -> Path:

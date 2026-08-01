@@ -15,14 +15,14 @@ from .workbook import build_source_ole_workbook, build_source_workbook_from_shel
 
 def build_source_workbook(
     cdx_paths: list[Path],
-    output_xlsx: Path,
+    source_dir: Path,
     request: SourceBuildRequest,
 ) -> None:
-    """Build a temporary source workbook from a neutral request (no plan import)."""
+    """Assemble the source parts into *source_dir* (unpacked, not zipped)."""
     if request.shell is not None:
         build_source_workbook_from_shell(
             cdx_paths[0],
-            output_xlsx,
+            source_dir,
             layout=request.layout,
             shell=request.shell,
             preview=request.preview,
@@ -34,7 +34,7 @@ def build_source_workbook(
 
     build_source_ole_workbook(
         cdx_paths,
-        output_xlsx,
+        source_dir,
         layout=request.layout,
         preview=request.preview,
     )

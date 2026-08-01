@@ -5,7 +5,7 @@ Steps (current architecture)::
   1. resolve target sheet in user package_dir
      (two-point placement resolves width/height against its real grid here)
   2. write temporary CDX files (optional normalize)
-  3. _source: build source.xlsx  (bin + preview + surface XML)
+  3. _source: 在 staging 目录里装齐零件（bin + preview + surface XML）
   4. _parts:  merge source parts into package_dir
   5. touch row/col layout when not using shell
   6. ensure content types for drawing / media
@@ -25,7 +25,6 @@ from retain_cdx.office.excel._ooxml import (
     sheet_index_from_path,
     touch_sheet_layout,
 )
-from retain_cdx.office._package import extract_ooxml
 from retain_cdx.office.excel._parts import merge_source_workbook
 from retain_cdx.office.excel._parts.anchor_overflow import normalize_anchor_overflow
 from retain_cdx.office.excel._grid import ExcelGridMetrics
@@ -63,14 +62,12 @@ def execute_insert(
         # 2. temporary CDX files (chem payload on disk)
         cdx_paths = write_cdx_sources(sources, tmpdir, plan)
 
-        # 3. assemble complete OLE package in a small source workbook
-        source_xlsx = tmpdir / "source_ole.xlsx"
-        build_source_workbook(cdx_paths, source_xlsx, plan.to_source_request())
+        # 3. assemble the OLE parts in a staging directory (never zipped —
+        #    packing then immediately re-extracting was pure overhead)
+        source_dir = tmpdir / "source"
+        build_source_workbook(cdx_paths, source_dir, plan.to_source_request())
 
         # 4. place: copy bin/media/surface from source → user package_dir
-        source_dir = tmpdir / "source"
-        source_dir.mkdir()
-        extract_ooxml(source_xlsx, source_dir)
         drawing_name = merge_source_workbook(
             package_dir,
             source_dir,
