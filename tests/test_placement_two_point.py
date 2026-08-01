@@ -15,7 +15,6 @@ import pytest
 from PIL import Image
 
 import retain_cdx.office.excel._shell.preview as shell_preview
-import retain_cdx.office.excel._source.fill_parts as fill_parts
 from retain_cdx import ExcelCDXWriter, ExcelPlacement, ExcelShellTemplate
 from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
@@ -55,8 +54,6 @@ def write_placeholder_emf_many(jobs, **kwargs) -> list[str]:
 
 @pytest.fixture()
 def placeholder_previews(monkeypatch) -> None:
-    monkeypatch.setattr(fill_parts, "render_preview", write_placeholder_preview)
-    monkeypatch.setattr(fill_parts, "render_emf_many", write_placeholder_emf_many)
     monkeypatch.setattr(shell_preview, "render_preview", write_placeholder_preview)
 
 

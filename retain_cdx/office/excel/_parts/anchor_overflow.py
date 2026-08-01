@@ -1,12 +1,15 @@
 """把越界的锚点偏移归一化到真实网格（子步骤 D 的收尾）.
 
-`compute_anchors` 把整个显示框写成「同一格 + 字面偏移」，偏移可以远超该格的
-宽高。Excel 按 origin+offset 解析并在保存时自行归一化，但 Excel 自己产出的
-文件从不这么写，第三方消费者可能直接 clamp。
+shell 路径沿用模板的锚点，偏移可能远超该格的宽高。Excel 按 origin+offset
+解析并在保存时自行归一化，但 Excel 自己产出的文件从不这么写，第三方消费者
+可能直接 clamp。
+
+（generated 路径改为直写后，锚点由 `ExcelGridMetrics` 按真实网格算出，本来
+就落在正确的格子里，这里对它是 no-op。）
 
 三处表示（worksheet ``<oleObject>`` / drawing ``xdr:twoCellAnchor`` /
 VML ``x:Anchor``）必须一起改，否则会重新引入它们之间的不一致。
-偏移本来就在格内时全程 no-op —— 常规插入（列宽 24 字符、行高 110pt）就是这种情况。
+偏移本来就在格内时全程 no-op。
 """
 
 from __future__ import annotations

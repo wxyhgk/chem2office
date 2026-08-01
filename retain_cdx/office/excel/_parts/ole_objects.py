@@ -18,17 +18,3 @@ def rewrite_ole_shape_ids(ole_objects: ET.Element, shape_id_map: dict[int, int])
         source_id = parse_int(ole_object.get("shapeId"))
         if source_id in shape_id_map:
             ole_object.set("shapeId", str(shape_id_map[source_id]))
-
-
-def normalize_object_pr(ole_objects: ET.Element) -> None:
-    """Pin the display box to our anchor instead of the preview image.
-
-    ``autoPict`` defaults to *true* (ECMA-376 §18.3.1.56) = size the object from
-    the referenced picture. Leaving it unset made Excel measure every preview at
-    layout time — costly with thousands of objects, and wrong for us since the
-    previews are deliberately supersampled. Excel's own files carry
-    ``autoPict="0"``; write it explicitly rather than dropping the attribute.
-    """
-    for object_pr in ole_objects.findall(".//s:objectPr", {"s": NS_MAIN}):
-        object_pr.set("autoPict", "0")
-        object_pr.set("defaultSize", "0")

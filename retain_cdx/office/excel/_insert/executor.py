@@ -75,7 +75,6 @@ def execute_insert(
                 sheet_path=target_sheet.path,
                 sheet_idx=target_sheet.index,
                 prefix=target_sheet.prefix,
-                preserve_object_pr=True,
                 copy_layout=True,
             )
         else:

@@ -64,20 +64,6 @@ def test_clones_are_independent(template):
     assert second.get("editAs") != "changed"
 
 
-def test_base_anchor_matches_the_legacy_reader(template, tmp_path):
-    """与现有 generated 路径读到的基准值一致。"""
-    from retain_cdx.office._package import extract_ooxml
-    from retain_cdx.office.excel._source.template import extract_base_anchor
-    from retain_cdx.resources import bundled_template_xlsx
-
-    package = tmp_path / "pkg"
-    package.mkdir()
-    with bundled_template_xlsx() as bundled:
-        extract_ooxml(bundled, package)
-    legacy = extract_base_anchor(package / "xl" / "worksheets" / "sheet1.xml")
-    assert legacy == (template.base_shape_id, template.from_row, template.to_row)
-
-
 def test_ole_object_carries_the_relationship_slots(template):
     """克隆后要改的两个 r:id 必须存在（oleObject 与 objectPr）。"""
     ole = template.new_ole_object().find("mc:Choice/s:oleObject", NS)

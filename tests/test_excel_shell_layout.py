@@ -5,8 +5,8 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 
+import retain_cdx.office.excel._insert_ole as insert_ole
 import retain_cdx.office.excel._shell.preview as shell_preview
-import retain_cdx.office.excel._source.fill_parts as fill_parts
 from retain_cdx import ExcelCDXWriter, ExcelShellTemplate, StructureSource
 from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.render.preview import inkscape_available, resolve_preview_format
@@ -66,20 +66,20 @@ def write_placeholder_emf_many(jobs, **kwargs) -> list[str]:
 
 
 def patch_preview_renderers(monkeypatch) -> None:
-    # Generated path renders via fill_parts; shell path via _shell.preview.
-    monkeypatch.setattr(fill_parts, "render_preview", write_placeholder_preview)
-    monkeypatch.setattr(fill_parts, "render_emf_many", write_placeholder_emf_many)
+    # Generated path renders via _insert_ole; shell path via _shell.preview.
+    monkeypatch.setattr(insert_ole, "render_preview", write_placeholder_preview)
+    monkeypatch.setattr(insert_ole, "render_emf_many", write_placeholder_emf_many)
     monkeypatch.setattr(shell_preview, "render_preview", write_placeholder_preview)
 
 
 def force_inkscape_available(monkeypatch, available: bool = True) -> None:
     monkeypatch.setattr(
-        fill_parts,
+        insert_ole,
         "preview_extension",
         lambda fmt: "emf" if _wants_emf(fmt, available) else "png",
     )
     monkeypatch.setattr(
-        fill_parts,
+        insert_ole,
         "resolve_preview_format",
         lambda fmt: "emf" if _wants_emf(fmt, available) else "png",
     )

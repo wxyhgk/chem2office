@@ -21,7 +21,7 @@ from retain_cdx.office.excel._ooxml import (
 )
 
 from .context import OlePartMergeContext
-from .ole_objects import normalize_object_pr, rewrite_ole_shape_ids
+from .ole_objects import rewrite_ole_shape_ids
 from .surface import merge_drawing_and_vml
 
 
@@ -32,7 +32,6 @@ def merge_source_workbook(
     sheet_path: Path,
     sheet_idx: int,
     prefix: str,
-    preserve_object_pr: bool = True,
     copy_layout: bool = False,
 ) -> str:
     """Merge OLE/drawing parts from a source OLE workbook into target sheet.
@@ -69,8 +68,6 @@ def merge_source_workbook(
     )
     if source_ole_objects is None:
         raise ValueError("Source OLE workbook has no oleObjects")
-    if not preserve_object_pr:
-        normalize_object_pr(source_ole_objects)
     rewrite_ole_shape_ids(source_ole_objects, shape_id_map)
 
     if copy_layout:
