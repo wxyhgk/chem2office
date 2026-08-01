@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.0.12 — 2026-08-01
 
 A structural release: no behaviour changes, but the public names now say which
