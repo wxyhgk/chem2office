@@ -55,7 +55,10 @@ from retain_cdx import (
 |---|---|
 | `embed.py` | 唯一入口 `write_cdx_to_ole`：能就地补丁就补丁，否则重建 |
 | `inject.py` | 写入既有流、按 FAT 链定位并修补目录项长度 |
-| `cfbf.py` | 从零构造合法容器（`\x01Ole` / `\x01CompObj` / `CONTENTS` + 可选额外流） |
+| `chemdraw.py` | ChemDraw 身份：CLSID / ProgID / 三个流长什么样 |
+| `cfbf.py` | 通用复合文件写入器，不认识化学 |
+
+细节见 `ole/README.md`。
 
 三个流与 Windows 产物逐字节一致，CLSID 与 ProgID 跨 Excel / PowerPoint 通用。
 容器会随载荷增长到所需的 FAT / mini-FAT / 目录扇区数——早期写死单个 FAT 扇区，

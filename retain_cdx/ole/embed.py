@@ -4,15 +4,14 @@ from pathlib import Path
 
 import olefile
 
-from .cfbf import build_chemdraw_ole
+from .cfbf import MINI_STREAM_CUTOFF
+from .chemdraw import build_chemdraw_ole
 from .inject import inject_cdx_stream, patch_direntry_size
 
 # Streams caching a rendering of the old molecule (PowerPoint containers carry
 # \x02OlePres000). We cannot regenerate them, and a cache that disagrees with
 # CONTENTS is worse than none — Excel's own ChemDraw containers ship without.
 _PRESENTATION_PREFIX = "\x02OlePres"
-
-_MINI_STREAM_CUTOFF = 0x1000
 
 
 def write_cdx_to_ole(
@@ -56,6 +55,6 @@ def _needs_rebuild(ole_path: Path, stream_name: str, new_size: int) -> bool:
     # Crossing the mini-stream cutoff moves the stream between the mini FAT and
     # the regular FAT; patching only the size field would leave the start
     # sector being resolved against the wrong allocator.
-    if (old_size >= _MINI_STREAM_CUTOFF) != (new_size >= _MINI_STREAM_CUTOFF):
+    if (old_size >= MINI_STREAM_CUTOFF) != (new_size >= MINI_STREAM_CUTOFF):
         return True
     return any(name.startswith(_PRESENTATION_PREFIX) for name in names)

@@ -7,7 +7,7 @@ from pathlib import Path
 import olefile
 import pytest
 
-from retain_cdx.ole.cfbf import build_chemdraw_ole
+from retain_cdx.ole.chemdraw import build_chemdraw_ole
 from retain_cdx.ole.embed import write_cdx_to_ole
 
 CDX = Path("tests/fixtures/test.cdx")
