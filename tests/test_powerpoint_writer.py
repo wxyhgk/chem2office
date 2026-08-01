@@ -13,8 +13,8 @@ from ooxml_checks import check_package
 from retain_cdx import (
     PowerPointCDXWriter,
     PreviewOptions,
-    SlideGrid,
-    SlidePlacement,
+    PowerPointGrid,
+    PowerPointPlacement,
     StructureSource,
 )
 from retain_cdx.office.powerpoint._pml import NS_A, NS_P, NS_R
@@ -158,7 +158,7 @@ def test_each_structure_gets_its_own_parts_and_rels(tmp_path, png_preview):
 
 def test_grid_places_structures_in_rows(tmp_path, png_preview):
     out = tmp_path / "grid.pptx"
-    grid = SlideGrid(
+    grid = PowerPointGrid(
         columns=2, x="1cm", y="1cm", cell_width="4cm", cell_height="3cm",
         gap_x="0cm", gap_y="0cm",
     )
@@ -183,7 +183,7 @@ def test_placement_units_and_aspect_fill(tmp_path, png_preview):
     with PowerPointCDXWriter(BLANK) as writer:
         writer.insert_cdx(
             CDX,
-            placement=SlidePlacement(x="2cm", y="1cm", width="6cm"),
+            placement=PowerPointPlacement(x="2cm", y="1cm", width="6cm"),
             preview=png_preview,
         )
         writer.save(out)

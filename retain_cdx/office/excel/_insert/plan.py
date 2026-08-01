@@ -14,14 +14,14 @@ from retain_cdx.office.excel.models import (
     ShellSourceOptions,
     SourceBuildRequest,
 )
-from retain_cdx.office.excel.options import DisplayOptions, Placement, ShellTemplate
+from retain_cdx.office.excel.options import ExcelDisplayOptions, ExcelPlacement, ExcelShellTemplate
 
 
 @dataclass(frozen=True)
 class InsertPlan:
     """Resolved insert inputs for the pipeline (plan → CDX files → source → merge)."""
 
-    placement: Placement
+    placement: ExcelPlacement
     layout: LayoutSpec
     preview: PreviewSpec
     normalize: NormalizeSpec
@@ -68,9 +68,9 @@ def build_insert_plan(
     sources: list[StructureSource],
     *,
     start_cell: str,
-    placement: Placement | None,
-    display: DisplayOptions | None,
-    shell: ShellTemplate | str | Path | None = None,
+    placement: ExcelPlacement | None,
+    display: ExcelDisplayOptions | None,
+    shell: ExcelShellTemplate | str | Path | None = None,
     # Ignored when *display* is given (it overrides all of them); the defaults
     # mirror ``ExcelCDXWriter.insert_cdx_many``.
     width_px: int = 145,
@@ -91,7 +91,7 @@ def build_insert_plan(
     preview_style: PreviewStyle = "acs1996",
 ) -> InsertPlan:
     if placement is None:
-        placement = Placement(start_cell)
+        placement = ExcelPlacement(start_cell)
 
     shell_path = shell_template_path(shell)
     if shell_path is not None and len(sources) != 1:
@@ -184,27 +184,27 @@ def build_insert_plan(
     )
 
 
-def shell_template_path(shell: ShellTemplate | str | Path | None) -> Path | None:
+def shell_template_path(shell: ExcelShellTemplate | str | Path | None) -> Path | None:
     if shell is None:
         return None
-    if isinstance(shell, ShellTemplate):
+    if isinstance(shell, ExcelShellTemplate):
         return Path(shell.xlsx)
     return Path(shell)
 
 
-def shell_preserve_aspect(shell: ShellTemplate | str | Path | None) -> bool:
-    if isinstance(shell, ShellTemplate):
+def shell_preserve_aspect(shell: ExcelShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ExcelShellTemplate):
         return shell.preserve_aspect
     return True
 
 
-def shell_allow_resize(shell: ShellTemplate | str | Path | None) -> bool:
-    if isinstance(shell, ShellTemplate):
+def shell_allow_resize(shell: ExcelShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ExcelShellTemplate):
         return shell.allow_resize
     return False
 
 
-def shell_fit_cdx(shell: ShellTemplate | str | Path | None) -> bool:
-    if isinstance(shell, ShellTemplate):
+def shell_fit_cdx(shell: ExcelShellTemplate | str | Path | None) -> bool:
+    if isinstance(shell, ExcelShellTemplate):
         return shell.fit_cdx
     return False

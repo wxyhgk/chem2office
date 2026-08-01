@@ -13,13 +13,13 @@ Usage::
 
 Notes on the public-API port:
 
-- ``--to`` defines the display box with a second anchor (``Placement.to_cell``)
+- ``--to`` defines the display box with a second anchor (``ExcelPlacement.to_cell``)
   and overrides ``--width``/``--height``; the span is resolved against the
   sheet's real column widths / row heights.
 - ``--stream`` was removed: the writer always uses the ChemDraw ``CONTENTS``
   stream.
 - ``--template`` now reuses the given workbook as a native ChemDraw OLE
-  *shell* (``ShellTemplate``); shell inserts support one CDX at a time.
+  *shell* (``ExcelShellTemplate``); shell inserts support one CDX at a time.
 - Anchor offsets accept ``mm``/``pt``/``in``/``px`` (``emu`` is gone).
 """
 
@@ -30,11 +30,11 @@ import re
 from pathlib import Path
 
 from retain_cdx import (
-    DisplayOptions,
+    ExcelDisplayOptions,
     ExcelCDXWriter,
-    Placement,
+    ExcelPlacement,
     PreviewOptions,
-    ShellTemplate,
+    ExcelShellTemplate,
     StructureSource,
 )
 
@@ -124,14 +124,14 @@ examples:
             raise SystemExit(f"CDX not found: {cdx_path}")
     sources = [StructureSource.from_cdx(p) for p in cdx_paths]
 
-    shell: ShellTemplate | None = None
+    shell: ExcelShellTemplate | None = None
     if args.template:
         template = Path(args.template)
         if not template.exists():
             raise SystemExit(f"Template not found: {template}")
         if len(sources) != 1:
             raise SystemExit("--template (shell) mode supports exactly one --cdx file.")
-        shell = ShellTemplate(xlsx=template)
+        shell = ExcelShellTemplate(xlsx=template)
 
     if args.from_spec:
         cell, offset_x, offset_y = parse_anchor_spec(args.from_spec, flag="--from")
@@ -147,7 +147,7 @@ examples:
             args.to_spec, flag="--to"
         )
 
-    display = DisplayOptions(
+    display = ExcelDisplayOptions(
         width=args.width,
         height=args.height,
         row_height=args.row_height,
@@ -166,7 +166,7 @@ examples:
                 sources,
                 sheet=DEFAULT_SHEET,
                 start_cell=cell,
-                placement=Placement(
+                placement=ExcelPlacement(
                     cell,
                     offset_x=offset_x,
                     offset_y=offset_y,

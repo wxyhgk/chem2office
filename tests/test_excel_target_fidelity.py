@@ -222,12 +222,12 @@ def test_two_point_anchor_lands_in_the_right_cell(tmp_path, monkeypatch):
     """Regression: the to-corner used to stay on the from-cell with a huge
     offset — Excel copes, other consumers clamp."""
     patch_preview_renderers(monkeypatch)
-    from retain_cdx import Placement
+    from retain_cdx import ExcelPlacement
 
     out = tmp_path / "out.xlsx"
     with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
         writer.insert_cdx(
-            CDX, sheet="Sheet1", placement=Placement("B2", to_cell="E8")
+            CDX, sheet="Sheet1", placement=ExcelPlacement("B2", to_cell="E8")
         )
         writer.save(out)
 
@@ -253,12 +253,12 @@ def test_two_point_anchor_lands_in_the_right_cell(tmp_path, monkeypatch):
 
 def test_vml_anchor_matches_the_drawing_after_normalisation(tmp_path, monkeypatch):
     patch_preview_renderers(monkeypatch)
-    from retain_cdx import Placement
+    from retain_cdx import ExcelPlacement
 
     out = tmp_path / "out.xlsx"
     with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
         writer.insert_cdx(
-            CDX, sheet="Sheet1", placement=Placement("B2", to_cell="E8")
+            CDX, sheet="Sheet1", placement=ExcelPlacement("B2", to_cell="E8")
         )
         writer.save(out)
 

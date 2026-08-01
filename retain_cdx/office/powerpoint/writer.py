@@ -19,7 +19,7 @@ from ._pml import (
     slide_paths,
     slide_size,
 )
-from .options import PreviewOptions, SlideGrid, SlidePlacement
+from .options import PreviewOptions, PowerPointGrid, PowerPointPlacement
 
 _DEFAULT_WIDTH_EMU = parse_emu("6cm")
 
@@ -39,7 +39,7 @@ class PowerPointCDXWriter:
 
         with PowerPointCDXWriter("deck.pptx") as writer:
             writer.insert_cdx(source, slide=1,
-                              placement=SlidePlacement(x="2cm", y="5cm", width="5cm"))
+                              placement=PowerPointPlacement(x="2cm", y="5cm", width="5cm"))
             writer.save("deck_with_structures.pptx")
 
     Either order works: python-pptx round-trips the OLE objects written here
@@ -89,7 +89,7 @@ class PowerPointCDXWriter:
         source: StructureSource | str | Path,
         *,
         slide: int = 1,
-        placement: SlidePlacement | None = None,
+        placement: PowerPointPlacement | None = None,
         preview: PreviewOptions | None = None,
         name: str | None = None,
     ) -> None:
@@ -109,8 +109,8 @@ class PowerPointCDXWriter:
         sources: Iterable[StructureSource | str | Path],
         *,
         slide: int = 1,
-        grid: SlideGrid | None = None,
-        placements: list[SlidePlacement | None] | None = None,
+        grid: PowerPointGrid | None = None,
+        placements: list[PowerPointPlacement | None] | None = None,
         preview: PreviewOptions | None = None,
         names: list[str] | None = None,
     ) -> None:
@@ -191,8 +191,8 @@ class PowerPointCDXWriter:
         structure: StructureSource,
         *,
         index: int,
-        grid: SlideGrid | None,
-        placement: SlidePlacement | None,
+        grid: PowerPointGrid | None,
+        placement: PowerPointPlacement | None,
     ) -> FramePlacement:
         aspect = structure.content_aspect or 1.0
         if grid is not None:

@@ -1,4 +1,4 @@
-"""Two-point anchor placement (``Placement.to_cell``).
+"""Two-point anchor placement (``ExcelPlacement.to_cell``).
 
 The display box spans ``cell + offset → to_cell + to_offset`` and is resolved
 against the target sheet's real column widths / row heights (Excel defaults
@@ -16,7 +16,7 @@ from PIL import Image
 
 import retain_cdx.office.excel._shell.preview as shell_preview
 import retain_cdx.office.excel._source.fill_parts as fill_parts
-from retain_cdx import ExcelCDXWriter, Placement, ShellTemplate
+from retain_cdx import ExcelCDXWriter, ExcelPlacement, ExcelShellTemplate
 from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.office.excel._utils import EMU_PER_PIXEL
 
@@ -147,7 +147,7 @@ def grid_metrics(workbook: Path):
 def insert_two_point(
     workbook: Path,
     output: Path,
-    placement: Placement,
+    placement: ExcelPlacement,
     **kwargs,
 ) -> None:
     with ExcelCDXWriter(workbook) as writer:
@@ -171,7 +171,7 @@ def test_two_point_spans_custom_grid(tmp_path: Path, placeholder_previews) -> No
         writer.insert_cdx(
             CDX,
             sheet="Sheet1",
-            placement=Placement("A1", to_cell="C3"),
+            placement=ExcelPlacement("A1", to_cell="C3"),
         )
         writer.save(output)
 
@@ -196,7 +196,7 @@ def test_to_cell_overrides_width_px(tmp_path: Path, placeholder_previews) -> Non
     insert_two_point(
         default_grid_workbook(tmp_path),
         output,
-        Placement("A1", to_cell="B2"),
+        ExcelPlacement("A1", to_cell="B2"),
         width_px=999,
         height_px=888,
     )
@@ -215,7 +215,7 @@ def test_default_grid_resolves_with_excel_defaults(
     insert_two_point(
         default_grid_workbook(tmp_path),
         output,
-        Placement("B2", to_cell="D5"),
+        ExcelPlacement("B2", to_cell="D5"),
     )
 
     (anchor,) = drawing_anchors(output)
@@ -233,7 +233,7 @@ def test_two_point_offsets_shift_both_corners(
     insert_two_point(
         default_grid_workbook(tmp_path),
         output,
-        Placement(
+        ExcelPlacement(
             "A1",
             offset_x="2mm",  # → 8 px
             offset_y="10pt",  # → 13 px
@@ -260,7 +260,7 @@ def test_two_point_applies_per_row_for_many(
             [CDX, CDX],
             sheet="Sheet1",
             start_cell="A1",
-            placement=Placement("A1", to_cell="C3"),
+            placement=ExcelPlacement("A1", to_cell="C3"),
         )
         writer.save(output)
 
@@ -282,7 +282,7 @@ def test_invalid_to_cell_before_from_cell_raises(
             writer.insert_cdx(
                 CDX,
                 sheet="Sheet1",
-                placement=Placement("C3", to_cell="A1"),
+                placement=ExcelPlacement("C3", to_cell="A1"),
             )
 
 
@@ -292,7 +292,7 @@ def test_malformed_to_cell_raises(tmp_path: Path, placeholder_previews) -> None:
             writer.insert_cdx(
                 CDX,
                 sheet="Sheet1",
-                placement=Placement("A1", to_cell="notacell"),
+                placement=ExcelPlacement("A1", to_cell="notacell"),
             )
 
 
@@ -302,8 +302,8 @@ def test_two_point_feeds_shell_geometry(tmp_path: Path, placeholder_previews) ->
     insert_two_point(
         default_grid_workbook(tmp_path),
         output,
-        Placement("A1", to_cell="C3"),  # 128 x 38 px on the 64/19 default grid
-        shell=ShellTemplate(
+        ExcelPlacement("A1", to_cell="C3"),  # 128 x 38 px on the 64/19 default grid
+        shell=ExcelShellTemplate(
             Path("tests/fixtures/shell_large.xlsx"),
             preserve_aspect=False,
         ),
@@ -324,7 +324,7 @@ def test_single_anchor_placement_unchanged(tmp_path: Path, placeholder_previews)
     insert_two_point(
         default_grid_workbook(tmp_path),
         output,
-        Placement("A1"),
+        ExcelPlacement("A1"),
         width_px=145,
         height_px=100,
     )

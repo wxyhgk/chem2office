@@ -2,25 +2,52 @@ from __future__ import annotations
 
 from .structure import StructureSource
 from .office.excel import (
-    DisplayOptions,
+    ExcelDisplayOptions,
     ExcelCDXWriter,
-    Placement,
+    ExcelPlacement,
     PreviewOptions,
-    ShellTemplate,
+    ExcelShellTemplate,
 )
-from .office.powerpoint import PowerPointCDXWriter, SlideGrid, SlidePlacement
+from .office.powerpoint import PowerPointCDXWriter, PowerPointGrid, PowerPointPlacement
 
 __all__ = [
-    "DisplayOptions",
+    "ExcelDisplayOptions",
     "ExcelCDXWriter",
-    "Placement",
+    "ExcelPlacement",
     "PowerPointCDXWriter",
     "PreviewOptions",
-    "ShellTemplate",
-    "SlideGrid",
-    "SlidePlacement",
+    "ExcelShellTemplate",
+    "PowerPointGrid",
+    "PowerPointPlacement",
     "StructureSource",
     "__version__",
 ]
 
 __version__ = "0.0.11"
+
+
+# --- 0.0.11 之前的名字 -------------------------------------------------
+# Excel 的这批诞生时包里只有 Excel，所以没有格式限定词；PowerPoint 进来后
+# 就分不清归属了。旧名保留一个版本，用时告警。
+_RENAMED = {
+    "Placement": "ExcelPlacement",
+    "DisplayOptions": "ExcelDisplayOptions",
+    "ShellTemplate": "ExcelShellTemplate",
+    "SlidePlacement": "PowerPointPlacement",
+    "SlideGrid": "PowerPointGrid",
+}
+
+
+def __getattr__(name: str):
+    new = _RENAMED.get(name)
+    if new is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import warnings
+
+    warnings.warn(
+        f"retain_cdx.{name} was renamed to {new}; the old name will be removed "
+        "in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return globals()[new]

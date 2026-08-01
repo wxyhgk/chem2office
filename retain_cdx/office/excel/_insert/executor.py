@@ -113,13 +113,13 @@ def execute_insert(
 
 
 def resolve_two_point_layout(plan: InsertPlan, sheet_path: Path) -> InsertPlan:
-    """Resolve a two-point ``Placement`` into concrete ``width_px``/``height_px``.
+    """Resolve a two-point ``ExcelPlacement`` into concrete ``width_px``/``height_px``.
 
     两点锚：对照目标 sheet 的真实列宽/行高（未声明的列/行用 Excel 默认
     64px/19px），把 ``cell + offset → to_cell + to_offset`` 的跨度换算成
     像素框，并替换 ``LayoutSpec``。单锚点 placement 原样返回。
 
-    The resolved size overrides ``width_px``/``height_px``/``DisplayOptions``
+    The resolved size overrides ``width_px``/``height_px``/``ExcelDisplayOptions``
     and, for multi-object inserts, applies per row like ``width_px`` does.
     """
     placement = plan.placement

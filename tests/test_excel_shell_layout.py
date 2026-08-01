@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 import retain_cdx.office.excel._shell.preview as shell_preview
 import retain_cdx.office.excel._source.fill_parts as fill_parts
-from retain_cdx import ExcelCDXWriter, ShellTemplate, StructureSource
+from retain_cdx import ExcelCDXWriter, ExcelShellTemplate, StructureSource
 from retain_cdx.office._package import extract_ooxml, pack_ooxml
 from retain_cdx.render.preview import inkscape_available, resolve_preview_format
 from PIL import Image
@@ -140,15 +140,15 @@ def relationship_ids(root: ET.Element) -> list[str]:
 def test_public_api_exports() -> None:
     import retain_cdx
     import retain_cdx.office.excel as excel
-    from retain_cdx import DisplayOptions, Placement, PreviewOptions
+    from retain_cdx import ExcelDisplayOptions, ExcelPlacement, PreviewOptions
 
     assert retain_cdx.__version__
     assert retain_cdx.ExcelCDXWriter is ExcelCDXWriter
-    assert retain_cdx.ShellTemplate is ShellTemplate
+    assert retain_cdx.ExcelShellTemplate is ExcelShellTemplate
     assert retain_cdx.StructureSource is StructureSource
     assert excel.ExcelCDXWriter is ExcelCDXWriter
-    assert excel.DisplayOptions is DisplayOptions
-    assert excel.Placement is Placement
+    assert excel.ExcelDisplayOptions is ExcelDisplayOptions
+    assert excel.ExcelPlacement is ExcelPlacement
     assert excel.PreviewOptions is PreviewOptions
     assert StructureSource.from_cdx("tests/fixtures/test.cdx").cdx_data
 
@@ -241,7 +241,7 @@ def test_object_pr_pins_box_size_on_both_paths(tmp_path: Path, monkeypatch) -> N
 
     for name, kwargs in (
         ("generated.xlsx", {}),
-        ("shell.xlsx", {"shell": ShellTemplate("tests/fixtures/shell_large.xlsx")}),
+        ("shell.xlsx", {"shell": ExcelShellTemplate("tests/fixtures/shell_large.xlsx")}),
     ):
         output = tmp_path / name
         with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
@@ -433,7 +433,7 @@ def test_shell_insert_preserves_existing_sheet_cells(tmp_path: Path) -> None:
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
-            shell=ShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
+            shell=ExcelShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
         )
         writer.save(output)
 
@@ -453,7 +453,7 @@ def test_shell_insert_preserves_existing_sheet_cells(tmp_path: Path) -> None:
 
 
 def test_shell_template_does_not_fit_cdx_by_default() -> None:
-    assert ShellTemplate(Path("tests/fixtures/shell_large.xlsx")).fit_cdx is False
+    assert ExcelShellTemplate(Path("tests/fixtures/shell_large.xlsx")).fit_cdx is False
 
 
 def test_shell_object_is_centered_in_target_cell(tmp_path: Path) -> None:
@@ -463,7 +463,7 @@ def test_shell_object_is_centered_in_target_cell(tmp_path: Path) -> None:
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
-            shell=ShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
+            shell=ExcelShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
             preview_format="png",
         )
         writer.save(output)
@@ -506,7 +506,7 @@ def test_shell_sheet_ole_anchor_matches_drawing_anchor(tmp_path: Path) -> None:
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
-            shell=ShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
+            shell=ExcelShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
             preview_format="png",
         )
         writer.save(output)
@@ -540,7 +540,7 @@ def test_shell_preview_matches_display_box_aspect_and_has_no_border(
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
-            shell=ShellTemplate(shell),
+            shell=ExcelShellTemplate(shell),
             preview_width=700,
             preview_height=700,
             preview_no_margin=True,
@@ -626,7 +626,7 @@ def test_shell_insert_can_use_emf_preview(tmp_path: Path, monkeypatch) -> None:
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
-            shell=ShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
+            shell=ExcelShellTemplate(Path("tests/fixtures/shell_large.xlsx")),
             preview_format="emf",
         )
         writer.save(output)

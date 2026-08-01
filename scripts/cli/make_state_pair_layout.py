@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from retain_cdx import ExcelCDXWriter, Placement, ShellTemplate, StructureSource
+from retain_cdx import ExcelCDXWriter, ExcelPlacement, ExcelShellTemplate, StructureSource
 
 DEFAULT_SHEET = "Sheet1"
 POINTS_PER_PIXEL = 0.75
@@ -121,8 +121,8 @@ def build_state_pair_layout(
             writer.insert_cdx(
                 source,
                 sheet=DEFAULT_SHEET,
-                placement=Placement("A1", offset_x=offset_x, offset_y=offset_y),
-                shell=ShellTemplate(xlsx=template) if template else None,
+                placement=ExcelPlacement("A1", offset_x=offset_x, offset_y=offset_y),
+                shell=ExcelShellTemplate(xlsx=template) if template else None,
                 width_px=width_px,
                 height_px=height_px,
                 # Same value openpyxl already wrote; keeps row 1's height

@@ -1,6 +1,6 @@
 """Internal DTOs shared by excel pipeline and source builders.
 
-**Not public API.** Prefer ``ExcelCDXWriter`` + ``options.DisplayOptions`` etc.
+**Not public API.** Prefer ``ExcelCDXWriter`` + ``options.ExcelDisplayOptions`` etc.
 from the package root. These models exist so ``_insert`` and ``_source`` can
 share a neutral contract without depending on each other.
 

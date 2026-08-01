@@ -25,9 +25,9 @@ import argparse
 from pathlib import Path
 
 from retain_cdx import (
-    DisplayOptions,
+    ExcelDisplayOptions,
     ExcelCDXWriter,
-    Placement,
+    ExcelPlacement,
     PreviewOptions,
     StructureSource,
 )
@@ -155,7 +155,7 @@ def convert_one(input_xlsx: Path, output: Path, args, *, limit: int) -> None:
     )
     start_cell = f"{struct_col}2"
 
-    display = DisplayOptions(
+    display = ExcelDisplayOptions(
         width="36mm",
         height="26mm",
         row_height=args.row_height,
@@ -198,7 +198,7 @@ def convert_one(input_xlsx: Path, output: Path, args, *, limit: int) -> None:
                     sources,
                     sheet=name,
                     start_cell=start_cell,
-                    placement=Placement(start_cell, offset_x="2mm", offset_y="2mm"),
+                    placement=ExcelPlacement(start_cell, offset_x="2mm", offset_y="2mm"),
                     display=display,
                 )
             writer.save(output)

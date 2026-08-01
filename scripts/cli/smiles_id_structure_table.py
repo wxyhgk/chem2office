@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from retain_cdx import ExcelCDXWriter, Placement, StructureSource
+from retain_cdx import ExcelCDXWriter, ExcelPlacement, StructureSource
 
 # SMILES body + trailing ID like D0000 / D0123
 _LINE_RE = re.compile(r"^(?P<smiles>.+?)(?P<id>D\d+)\s*$")
@@ -132,7 +132,7 @@ def build_table(
             sources,
             sheet=sheet,
             start_cell="B2",
-            placement=Placement("B2", offset_x=offset_x_px, offset_y=offset_y_px),
+            placement=ExcelPlacement("B2", offset_x=offset_x_px, offset_y=offset_y_px),
             width_px=width_px,
             height_px=height_px,
             row_height=row_height,

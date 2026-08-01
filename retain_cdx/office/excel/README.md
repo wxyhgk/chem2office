@@ -13,7 +13,7 @@
 | 层级 | 可依赖？ | 符号 / 路径 | 说明 |
 |------|----------|-------------|------|
 | **大门 Public** | ✅ 稳定 | `retain_cdx.ExcelCDXWriter` | 写 workbook 的唯一推荐入口 |
-| | ✅ | `Placement`, `PreviewOptions`, `DisplayOptions`, `ShellTemplate` | 用户配置 |
+| | ✅ | `ExcelPlacement`, `PreviewOptions`, `ExcelDisplayOptions`, `ExcelShellTemplate` | 用户配置 |
 | | ✅ | `retain_cdx.StructureSource` | 化学结构（excel 外的领域对象） |
 | **员工通道 Internal** | ⚠️ 勿当 API | `office/excel/models.py` | 内部 DTO（`PreviewSpec` / `SourceBuildRequest`…） |
 | | ⚠️ | `_insert/` | 编排：plan → CDX → source → merge |

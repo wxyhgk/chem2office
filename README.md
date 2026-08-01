@@ -156,16 +156,16 @@ with ExcelCDXWriter("input.xlsx") as writer:
 只负责把分子放到指定幻灯片的指定位置；幻灯片本身用 `python-pptx` 之类去做：
 
 ```python
-from retain_cdx import PowerPointCDXWriter, SlidePlacement, SlideGrid
+from retain_cdx import PowerPointCDXWriter, PowerPointPlacement, PowerPointGrid
 
 with PowerPointCDXWriter("deck.pptx") as writer:
     writer.insert_cdx(source, slide=1,
-                      placement=SlidePlacement(x="2cm", y="5cm", width="6cm"))
+                      placement=PowerPointPlacement(x="2cm", y="5cm", width="6cm"))
     writer.save("deck_with_structures.pptx")
 ```
 
 长度支持 `cm/mm/in/pt/px/emu`；宽高只给一个时按分子比例补另一个。
-多个结构可用 `SlideGrid(columns=3, cell_width="5cm", cell_height="4cm")` 平铺。
+多个结构可用 `PowerPointGrid(columns=3, cell_width="5cm", cell_height="4cm")` 平铺。
 两个包可以任意先后使用——python-pptx 往返不会丢 OLE 对象。
 
 ## 用法
@@ -194,7 +194,7 @@ python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/1.cdx tests/fix
 - 生成预览 PNG（默认 RDKit ACS 1996 风格，回退 Open Babel）并绑定到对应 OLE。
 
 注意：`--template` 模式现在复用「原生 Excel+ChemDraw shell」路径
-（`ShellTemplate`），一次只支持一个 `--cdx` 文件。
+（`ExcelShellTemplate`），一次只支持一个 `--cdx` 文件。
 
 ### 位置与尺寸控制
 
@@ -233,7 +233,7 @@ B2+0pt,40pt
   `--to` 指定单元格的**左上角**（加偏移），跨度按目标表的真实
   列宽/行高解析（未设置的列/行按 Excel 默认 64px/19px）。
   设置 `--to` 时会覆盖 `--width`/`--height`，且不再调整行高/列宽。
-  对应公共 API 的 `Placement(to_cell=..., to_offset_x=..., to_offset_y=...)`。
+  对应公共 API 的 `ExcelPlacement(to_cell=..., to_offset_x=..., to_offset_y=...)`。
 
 例子：
 
@@ -331,7 +331,7 @@ python3 -m scripts.cli.make_state_pair_layout \
 - 上述流程现在全部由 `retain_cdx` 库内部实现（`ExcelCDXWriter`）；
   CLI 只负责解析参数并调用公共 API。
 - 定位参数（`--col`、`--start-row`、`--width`、`--height`、`--from`）
-  会被翻译成 `Placement` / `DisplayOptions` 传给库。
+  会被翻译成 `ExcelPlacement` / `ExcelDisplayOptions` 传给库。
 
 ## 限制
 

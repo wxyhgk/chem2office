@@ -20,7 +20,7 @@ from retain_cdx.office.excel._ooxml import (
     touch_sheet_layout,
 )
 from retain_cdx.office.excel._utils import col_to_index
-from retain_cdx.office.excel.options import DisplayOptions, Placement, ShellTemplate
+from retain_cdx.office.excel.options import ExcelDisplayOptions, ExcelPlacement, ExcelShellTemplate
 
 
 class ExcelCDXWriter:
@@ -51,8 +51,8 @@ class ExcelCDXWriter:
         *,
         sheet: str,
         start_cell: str,
-        display: DisplayOptions | None = None,
-        placement: Placement | None = None,
+        display: ExcelDisplayOptions | None = None,
+        placement: ExcelPlacement | None = None,
     ) -> None:
         """Insert structures as plain pictures, one per row, **not** as OLE.
 
@@ -72,7 +72,7 @@ class ExcelCDXWriter:
         if not cdx_sources:
             return
 
-        options = display or DisplayOptions()
+        options = display or ExcelDisplayOptions()
         plan = build_insert_plan(
             cdx_sources,
             start_cell=start_cell,
@@ -157,9 +157,9 @@ class ExcelCDXWriter:
         *,
         sheet: str,
         cell: str | None = None,
-        placement: Placement | None = None,
-        display: DisplayOptions | None = None,
-        shell: ShellTemplate | str | Path | None = None,
+        placement: ExcelPlacement | None = None,
+        display: ExcelDisplayOptions | None = None,
+        shell: ExcelShellTemplate | str | Path | None = None,
         width_px: int = 145,
         height_px: int = 100,
         row_height: float | None = 110,
@@ -181,7 +181,7 @@ class ExcelCDXWriter:
         if placement is None:
             if cell is None:
                 raise ValueError("Either cell or placement is required.")
-            placement = Placement(cell)
+            placement = ExcelPlacement(cell)
         cdx_source = (
             source
             if isinstance(source, StructureSource)
@@ -218,9 +218,9 @@ class ExcelCDXWriter:
         *,
         sheet: str,
         start_cell: str,
-        placement: Placement | None = None,
-        display: DisplayOptions | None = None,
-        shell: ShellTemplate | str | Path | None = None,
+        placement: ExcelPlacement | None = None,
+        display: ExcelDisplayOptions | None = None,
+        shell: ExcelShellTemplate | str | Path | None = None,
         width_px: int = 145,
         height_px: int = 100,
         row_height: float | None = 110,

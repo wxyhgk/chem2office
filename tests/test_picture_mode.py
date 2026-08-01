@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from retain_cdx import DisplayOptions, ExcelCDXWriter, Placement, PreviewOptions
+from retain_cdx import ExcelDisplayOptions, ExcelCDXWriter, ExcelPlacement, PreviewOptions
 from retain_cdx.office.excel._ooxml.xml_io import (
     NS,
     NS_A,
@@ -139,8 +139,8 @@ def test_picture_mode_honours_display_box(tmp_path, monkeypatch):
         tmp_path / "pics.xlsx",
         monkeypatch,
         count=1,
-        display=DisplayOptions(width=200, height=150, row_height=120, col_width=30),
-        placement=Placement("B2", offset_x=8, offset_y=6),
+        display=ExcelDisplayOptions(width=200, height=150, row_height=120, col_width=30),
+        placement=ExcelPlacement("B2", offset_x=8, offset_y=6),
     )
     root = ET.fromstring(archive.read(_drawing_part(archive)))
     ext = root.find(f".//{{{NS_A}}}ext")

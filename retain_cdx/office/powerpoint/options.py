@@ -9,7 +9,7 @@ Length = int | float | str
 
 
 @dataclass(frozen=True)
-class SlidePlacement:
+class PowerPointPlacement:
     """Absolute box on a slide.
 
     Lengths accept ``"6cm"`` / ``"2in"`` / ``"200pt"`` / ``"96px"`` or a bare
@@ -41,7 +41,7 @@ class SlidePlacement:
 
 
 @dataclass(frozen=True)
-class SlideGrid:
+class PowerPointGrid:
     """Lay several structures out on one slide, row by row."""
 
     columns: int = 3
@@ -55,7 +55,7 @@ class SlideGrid:
     def box(self, index: int) -> tuple[int, int, int, int]:
         """(x, y, width, height) in EMU for the *index*-th structure."""
         if self.columns < 1:
-            raise ValueError("SlideGrid.columns must be >= 1")
+            raise ValueError("PowerPointGrid.columns must be >= 1")
         column, row = index % self.columns, index // self.columns
         width, height = parse_emu(self.cell_width), parse_emu(self.cell_height)
         x = parse_emu(self.x) + column * (width + parse_emu(self.gap_x))
@@ -63,4 +63,4 @@ class SlideGrid:
         return x, y, width, height
 
 
-__all__ = ["PreviewOptions", "SlideGrid", "SlidePlacement"]
+__all__ = ["PreviewOptions", "PowerPointGrid", "PowerPointPlacement"]

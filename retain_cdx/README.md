@@ -19,19 +19,22 @@ worksheet、slide、锚点这些东西。
 
 ## 公共 API
 
-只有这些是稳定的，其余（含 `_` 前缀模块）随时可能重构：
+只有这些是稳定的，其余（含 `_` 前缀模块）随时可能重构。
+**带格式前缀的归该格式，不带前缀的是两边共享的**：
 
 ```python
 from retain_cdx import (
-    ExcelCDXWriter,      # 往 .xlsx 写；也能写单元格文本、行高列宽
-    PowerPointCDXWriter, # 往已有 .pptx 的某页某位置放分子
-    StructureSource,     # from_cdx / from_smiles，可 normalized()
-    Placement,           # Excel 定位：单元格 + 格内偏移，或两点锚（to_cell）
-    DisplayOptions,      # Excel 显示框、行高列宽、归一化、预览
-    ShellTemplate,       # 复用原生 Excel+ChemDraw 模板的路径
-    SlidePlacement,      # PPT 定位：绝对 EMU 框，支持 cm/mm/in/pt/px/emu
-    SlideGrid,           # PPT 网格平铺
-    PreviewOptions,      # 预览格式/后端/尺寸（两个 writer 共用）
+    ExcelCDXWriter,        # 往 .xlsx 写；也能写单元格文本、行高列宽
+    ExcelPlacement,        # 定位：单元格 + 格内偏移，或两点锚（to_cell）
+    ExcelDisplayOptions,   # 显示框、行高列宽、归一化、预览
+    ExcelShellTemplate,    # 复用原生 Excel+ChemDraw 模板的路径
+
+    PowerPointCDXWriter,   # 往已有 .pptx 的某页某位置放分子
+    PowerPointPlacement,   # 绝对 EMU 框，支持 cm/mm/in/pt/px/emu
+    PowerPointGrid,        # 网格平铺
+
+    StructureSource,       # from_cdx / from_smiles，可 normalized()
+    PreviewOptions,        # 预览格式/后端/尺寸（两个 writer 共用）
 )
 ```
 

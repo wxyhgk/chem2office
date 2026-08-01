@@ -9,11 +9,11 @@ from ._utils import parse_px
 
 
 @dataclass(frozen=True)
-class Placement:
+class ExcelPlacement:
     """Anchor placement: top-left cell + offset, plus optional second anchor.
 
     单锚点（默认）：``cell`` (+ ``offset_x``/``offset_y``) 只定左上角，
-    显示框大小由 ``width_px``/``height_px`` 或 ``DisplayOptions`` 决定。
+    显示框大小由 ``width_px``/``height_px`` 或 ``ExcelDisplayOptions`` 决定。
 
     两点锚（two-point anchor）：设置 ``to_cell`` 后，显示框从
     ``cell + offset`` 一直延伸到 ``to_cell + to_offset``。``to_cell`` 指该
@@ -24,7 +24,7 @@ class Placement:
     Size precedence / 尺寸优先级::
 
         to_cell（两点锚，网格解析）
-          > DisplayOptions.width/height
+          > ExcelDisplayOptions.width/height
           > width_px/height_px 参数
 
     两点锚模式下不会再调整目标表的行高/列宽（框由现有网格本身定义）。
@@ -58,7 +58,7 @@ class Placement:
 
 
 @dataclass(frozen=True)
-class DisplayOptions:
+class ExcelDisplayOptions:
     width: int | float | str = 145
     height: int | float | str = 100
     row_height: float | None = None
@@ -79,7 +79,7 @@ class DisplayOptions:
 
 
 @dataclass(frozen=True)
-class ShellTemplate:
+class ExcelShellTemplate:
     """Native Excel/ChemDraw OLE shell to reuse for stable OLE display."""
 
     xlsx: str | Path

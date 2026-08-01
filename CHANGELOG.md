@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Renamed the format-specific public names
+
+The Excel names were coined when Excel was the only format, so they carried no
+qualifier; PowerPoint arrived with `Slide*` names. Half the API said which
+format it belonged to and half did not. Everything format-specific now takes
+the prefix its writer already used:
+
+| old | new |
+|---|---|
+| `Placement` | `ExcelPlacement` |
+| `DisplayOptions` | `ExcelDisplayOptions` |
+| `ShellTemplate` | `ExcelShellTemplate` |
+| `SlidePlacement` | `PowerPointPlacement` |
+| `SlideGrid` | `PowerPointGrid` |
+
+`StructureSource` and `PreviewOptions` keep bare names — they genuinely belong
+to both. The rule is now testable: a prefix means format-specific, no prefix
+means shared.
+
+Old names still resolve through a module `__getattr__` and raise
+`DeprecationWarning`; they will be removed in a later release.
+
 ## 0.0.11 — 2026-07-31
 
 Closes the remaining findings from `docs/excel_ooxml_research.md`; every C/F
