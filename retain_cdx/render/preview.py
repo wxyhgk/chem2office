@@ -939,26 +939,24 @@ def _crop_non_background(
     background: tuple[int, int, int],
     threshold: int,
 ):
-    pixels = image.load()
+    from PIL import Image, ImageChops
+
     width, height = image.size
-    left, top = width, height
-    right, bottom = -1, -1
-
-    for y in range(height):
-        for x in range(width):
-            red, green, blue = pixels[x, y]
-            if (
-                abs(red - background[0]) > 255 - threshold
-                or abs(green - background[1]) > 255 - threshold
-                or abs(blue - background[2]) > 255 - threshold
-            ):
-                left = min(left, x)
-                top = min(top, y)
-                right = max(right, x)
-                bottom = max(bottom, y)
-
-    if right < left or bottom < top:
+    # 每个通道与背景的差值超过容差就算前景。原来是逐像素的 Python 双重循环，
+    # 580×400 就是 23 万次解释器迭代；这些是 PIL 的 C 实现。
+    tolerance = 255 - threshold
+    difference = ImageChops.difference(image, Image.new("RGB", image.size, background))
+    # 「任一通道超差」= 三通道取最大后比较；convert("L") 是亮度加权，不等价
+    red, green, blue = difference.split()
+    channel_max = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    mask = channel_max.point(lambda value: 255 if value > tolerance else 0)
+    box = mask.getbbox()
+    if box is None:
         return None
+    left, top, right, bottom = box
+    right -= 1  # getbbox 的右/下界是开区间，下面按闭区间处理
+    bottom -= 1
+
     left = max(0, left - padding)
     top = max(0, top - padding)
     right = min(width, right + padding + 1)
