@@ -21,11 +21,16 @@ from .xml_io import (
 )
 
 
-def set_inline_cell_text(sheet_path: Path, cells: Mapping[str, str]) -> None:
+def set_inline_cell_text(
+    sheet_path: Path, cells: Mapping[str, str], *, style: int | None = None
+) -> None:
     """Write inline-string values like ``{"A1": "编号", "A2": "D0001"}``.
 
     Creates missing rows, preserves existing row attributes (heights set by
     the OLE insert), and keeps rows/cells sorted so Excel does not repair.
+
+    *style* is a ``cellXfs`` index (see `_ooxml/styles.py`); when given it wins
+    over whatever the replaced cell carried, otherwise the old style survives.
     """
     if not cells:
         return
@@ -48,7 +53,7 @@ def set_inline_cell_text(sheet_path: Path, cells: Mapping[str, str]) -> None:
         if row is None:
             row = ET.Element(f"{{{NS_MAIN}}}row", r=str(row_num))
             rows_by_r[row_num] = row
-        replaced_formula |= _set_inline(row, ref.strip().upper(), text)
+        replaced_formula |= _set_inline(row, ref.strip().upper(), text, style=style)
         _sort_row_cells(row)
 
     # Excel requires ascending row order; re-append everything sorted.
@@ -65,20 +70,23 @@ def set_inline_cell_text(sheet_path: Path, cells: Mapping[str, str]) -> None:
         drop_calc_chain(sheet_path.parent.parent.parent)
 
 
-def _set_inline(row: ET.Element, ref: str, text: str) -> bool:
+def _set_inline(
+    row: ET.Element, ref: str, text: str, *, style: int | None = None
+) -> bool:
     """Replace the cell at *ref*. Returns True if it used to hold a formula."""
-    style = None
+    inherited = None
     had_formula = False
     for cell in list(row.findall("s:c", NS)):
         if cell.get("r") != ref:
             continue
         # Keep the cell's format — replacing text should not strip bold/fill.
-        style = cell.get("s")
+        inherited = cell.get("s")
         had_formula = cell.find("s:f", NS) is not None
         row.remove(cell)
     cell = ET.SubElement(row, f"{{{NS_MAIN}}}c", r=ref, t="inlineStr")
-    if style is not None:
-        cell.set("s", style)
+    applied = str(style) if style is not None else inherited
+    if applied is not None:
+        cell.set("s", applied)
     is_el = ET.SubElement(cell, f"{{{NS_MAIN}}}is")
     t_el = ET.SubElement(is_el, f"{{{NS_MAIN}}}t")
     t_el.text = text

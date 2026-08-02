@@ -458,10 +458,16 @@ def svg_to_emf_batch(
     *,
     text_to_path: bool = True,
     chunk_size: int = _INKSCAPE_SHELL_CHUNK,
+    companion_wmf: bool = False,
 ) -> None:
     """Convert many SVG files to EMF with one or more ``inkscape --shell`` sessions.
 
     Avoids cold-starting the full Inkscape.app per file (often ~0.5s on macOS).
+
+    *companion_wmf* also writes ``<emf>.with_suffix(".wmf")`` from the same open
+    document — PowerPoint's OLE presentation cache needs both (the EMF rides
+    inside the WMF; see `retain_cdx/ole/presentation.py`). Exporting twice per
+    open costs one extra Inkscape action, not a second SVG render.
     """
     if not pairs:
         return
@@ -490,7 +496,13 @@ def svg_to_emf_batch(
             if text_to_path:
                 # Match CLI ``--export-text-to-path`` so Excel does not sub fonts.
                 actions.append("export-text-to-path:true")
-            actions.extend(["export-do", "file-close"])
+            actions.append("export-do")
+            if companion_wmf:
+                actions.append(
+                    f"export-filename:{_inkscape_action_path(emf.with_suffix('.wmf'))}"
+                )
+                actions.append("export-do")
+            actions.append("file-close")
             lines.append(";".join(actions))
         lines.append("quit")
         script = "\n".join(lines) + "\n"
@@ -506,10 +518,13 @@ def svg_to_emf_batch(
             detail = (proc.stderr or proc.stdout or "").strip()
             raise SystemExit(f"inkscape --shell failed: {detail}")
 
+        expected = [emf for _, emf in chunk]
+        if companion_wmf:
+            expected += [emf.with_suffix(".wmf") for _, emf in chunk]
         missing = [
-            str(emf)
-            for _, emf in chunk
-            if not emf.exists() or emf.stat().st_size == 0
+            str(path)
+            for path in expected
+            if not path.exists() or path.stat().st_size == 0
         ]
         if missing:
             detail = (proc.stderr or proc.stdout or "").strip()
@@ -538,6 +553,7 @@ def render_emf(
     target_aspect: float | None = None,
     crop_padding: int = 2,
     fill_ratio: float = 0.92,
+    companion_wmf: bool = False,
 ) -> str:
     """Render CDX to a **vector** EMF via SVG + Inkscape.
 
@@ -560,6 +576,7 @@ def render_emf(
         target_aspect=target_aspect,
         crop_padding=crop_padding,
         fill_ratio=fill_ratio,
+        companion_wmf=companion_wmf,
     )
     return used[0]
 
@@ -579,6 +596,7 @@ def render_emf_many(
     target_aspect: float | None = None,
     crop_padding: int = 2,
     fill_ratio: float = 0.92,
+    companion_wmf: bool = False,
 ) -> list[str]:
     """Render many CDX→EMF jobs with batched ``inkscape --shell`` exports.
 
@@ -634,7 +652,7 @@ def render_emf_many(
             pairs.append((svg_path, emf_path))
             used_backends.append(used)
 
-        svg_to_emf_batch(pairs)
+        svg_to_emf_batch(pairs, companion_wmf=companion_wmf)
 
     return used_backends
 
@@ -774,6 +792,7 @@ def render_preview(
     keep_size: bool = True,
     target_aspect: float | None = None,
     fill_ratio: float = 0.92,
+    companion_wmf: bool = False,
 ) -> ResolvedPreviewFormat:
     """Render a preview image.
 
@@ -802,6 +821,7 @@ def render_preview(
             target_aspect=target_aspect,
             crop_padding=crop_padding,
             fill_ratio=fill_ratio,
+            companion_wmf=companion_wmf,
         )
         return "emf"
 

@@ -19,6 +19,7 @@ from .relationships import (
     read_rels,
     rewrite_rel_targets,
 )
+from .styles import ExcelCellAlignment, ensure_alignment_style
 from .sheet_layout import copy_sheet_layout, touch_sheet_layout
 from .workbook import parse_workbook_sheets, sheet_index_from_path
 from .worksheet import attach_ole_objects
@@ -62,6 +63,8 @@ __all__ = [
     "REL_VML",
     "RELS_NS",
     "rewrite_rel_targets",
+    "ExcelCellAlignment",
+    "ensure_alignment_style",
     "set_inline_cell_text",
     "sheet_index_from_path",
     "touch_sheet_layout",

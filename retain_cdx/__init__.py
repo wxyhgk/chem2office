@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .structure import StructureSource
 from .office.excel import (
+    ExcelCellAlignment,
     ExcelDisplayOptions,
     ExcelCDXWriter,
     ExcelPlacement,
@@ -11,6 +12,7 @@ from .office.excel import (
 from .office.powerpoint import PowerPointCDXWriter, PowerPointGrid, PowerPointPlacement
 
 __all__ = [
+    "ExcelCellAlignment",
     "ExcelDisplayOptions",
     "ExcelCDXWriter",
     "ExcelPlacement",
@@ -23,7 +25,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.0.13"
+__version__ = "0.0.14"
 
 
 # --- 0.0.11 之前的名字 -------------------------------------------------

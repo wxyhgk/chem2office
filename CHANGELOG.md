@@ -1,6 +1,57 @@
 # Changelog
 
-## Unreleased
+## 0.0.14 — 2026-08-02
+
+PowerPoint 里的 ChemDraw 对象现在可以复制到别处而不退化成图片；Excel 单元格支持
+垂直对齐。
+
+### PowerPoint 里的对象可以复制出去了
+
+从我们生成的 PPT 里复制一个结构到另一个 PPT，粘出来是**一张图片**——不能双击、
+也不能再复制进 Excel。对象本身没问题（双击原件照样进 ChemDraw），差的是缓存渲染：
+容器里缺 `\x02OlePres000`。目标程序拿不到缓存又不会现场唤起 OLE 服务器，只好退
+而取剪贴板里的位图。与 Windows 版 ChemDraw 的真实产物逐流比对确认：`\x01Ole`、
+`\x01CompObj` 与之逐字节相同，根 CLSID 正确，唯独少这一个流。
+
+- 新增 `retain_cdx/ole/presentation.py`：`build_enhmetafile_presentation()` 组流，
+  `wrap_emf_in_wmf()` 做外壳，`emu_to_himetric()` 换算尺寸。
+- `write_cdx_to_ole(..., presentation=...)` 挂载该流，并强制重建容器——原地注入
+  会让缓存与 `CONTENTS` 说两套话。
+- `PowerPointCDXWriter` 先渲染预览再建容器，复用同一份矢量图当缓存。
+- `render_preview(..., companion_wmf=True)` 在同一次 `inkscape --shell` 打开里
+  连导 EMF 和 WMF，只多一次导出动作，SVG 不重渲。
+
+**载荷形式是试出来的，不是推出来的。** 头一版按 `CF_ENHMETAFILE` 的字面含义放了
+裸 EMF，结果 PowerPoint 双击直接报「可能导致 PowerPoint 不稳定」。参照文件的数据段
+其实是 WMF——EMF 藏在一条 `MFCOMMENT`/`WMFC` 注释记录里。在 Windows 上逐变体实测：
+
+| 数据段 | 双击 | 复制到新 PPT |
+|---|---|---|
+| 裸 EMF | 崩 | — |
+| EMF 切成 2 条注释记录 | 正常 | 只是图片 |
+| 1 条注释记录，校验和填 0 | 正常 | 只是图片 |
+| **1 条注释记录，校验和照算** | 正常 | **正常，可再复制进 Excel** |
+
+由此定下三条约束：整份 EMF 只能放一条注释记录（`ByteCount` 是 16 位，上限
+`MAX_EMBEDDED_EMF` = 65501，超了就不挂）；校验和真的被检验，用 Wine 的算法
+（34 字节注释头的 16 位和取二补）；Inkscape 的 WMF 要剥掉 22 字节 placeable 头。
+
+排除掉的几件事：模板容器本来就带演示流，所以 PPT 一直走重建路径，这次唯一的变化
+就是流内容；用我们的写入器重建参照容器，4 个流逐字节一致、mini 流布局也一致；把
+参照的演示流原字节挂到我们的容器上，一切正常——管道无罪。
+
+- `tests/test_ole_presentation.py`（11 个）：字段布局、TOC 尾、单条注释记录及其
+  各字段、校验和非零且可复算、超限报错而非分块、placeable 头剥离、EMF 挂载 /
+  PNG 不挂、尺寸跟随显示框、缓存与所属结构同批产生。
+- `docs/powerpoint_ole_research.md` §九记下全部六个变体的实测结果；§五那条
+  「`OlePres000` 会变陈旧，必须在真 PowerPoint 上验证」的悬案就此了结。
+
+### Excel 单元格垂直对齐
+
+`set_cell_text(s)` 新增 `align=ExcelCellAlignment(...)`，支持水平 / 垂直对齐与
+自动换行。对齐不能写在单元格上，得指向 `xl/styles.xml` 的 `cellXfs`；
+`_ooxml/styles.py` 负责找到或登记一条 `<xf>`，相同对齐只登记一次——否则几千个
+结构就是几千条样式。
 
 ### 结构
 

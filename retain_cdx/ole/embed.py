@@ -6,6 +6,7 @@ import olefile
 
 from .cfbf import MINI_STREAM_CUTOFF
 from .chemdraw import build_chemdraw_ole
+from .presentation import PRESENTATION_STREAM
 from .inject import inject_cdx_stream, patch_direntry_size
 
 # Streams caching a rendering of the old molecule (PowerPoint containers carry
@@ -20,17 +21,30 @@ def write_cdx_to_ole(
     *,
     template_ole: bytes | None = None,
     stream_name: str = "CONTENTS",
+    presentation: bytes | None = None,
 ) -> None:
     """Write *cdx_path* into a ChemDraw OLE container.
 
     If *template_ole* is provided it is written to *ole_path* first. The
     template's stream is patched in place when the new payload fits the same
     storage; otherwise a fresh container is built.
+
+    *presentation* attaches a cached rendering (`\\x02OlePres000`). Without one
+    the object still activates, but copying it out of PowerPoint degrades to a
+    picture — see `presentation.py`. Supplying it forces a rebuild so the cache
+    cannot disagree with CONTENTS.
     """
     if template_ole is not None:
         ole_path.write_bytes(template_ole)
 
     cdx_data = cdx_path.read_bytes()
+    if presentation is not None:
+        ole_path.write_bytes(
+            build_chemdraw_ole(
+                cdx_data, extra_streams={PRESENTATION_STREAM: presentation}
+            )
+        )
+        return
     if _needs_rebuild(ole_path, stream_name, len(cdx_data)):
         ole_path.write_bytes(build_chemdraw_ole(cdx_data))
         return

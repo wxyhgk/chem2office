@@ -15,6 +15,8 @@ from retain_cdx.office.excel._insert.executor import (
 )
 from retain_cdx.office.excel._picture import insert_structure_pictures
 from retain_cdx.office.excel._ooxml import (
+    ExcelCellAlignment,
+    ensure_alignment_style,
     parse_workbook_sheets,
     set_inline_cell_text,
     touch_sheet_layout,
@@ -104,17 +106,40 @@ class ExcelCDXWriter:
                 preview=plan.preview,
             )
 
-    def set_cell_text(self, sheet: str, cell: str, text: str) -> None:
+    def set_cell_text(
+        self,
+        sheet: str,
+        cell: str,
+        text: str,
+        *,
+        align: ExcelCellAlignment | None = None,
+    ) -> None:
         """Write a plain text value (inline string) into *sheet*!*cell*."""
-        self.set_cell_texts(sheet, {cell: text})
+        self.set_cell_texts(sheet, {cell: text}, align=align)
 
-    def set_cell_texts(self, sheet: str, cells: Mapping[str, str]) -> None:
+    def set_cell_texts(
+        self,
+        sheet: str,
+        cells: Mapping[str, str],
+        *,
+        align: ExcelCellAlignment | None = None,
+    ) -> None:
         """Write plain text values, e.g. ``{"A1": "编号", "A2": "D0001"}``.
 
         Use this (not openpyxl, which drops OLE parts) to put IDs or headers
         next to inserted structures.
+
+        *align* styles the written cells. Rows sized for a structure are tall,
+        and Excel aligns to the bottom by default, so a label sits well below
+        the molecule beside it — ``ExcelCellAlignment(vertical="center")`` lines
+        them up.
         """
-        set_inline_cell_text(self._sheet_path(sheet), cells)
+        style = (
+            ensure_alignment_style(self.package_dir, align)
+            if align is not None
+            else None
+        )
+        set_inline_cell_text(self._sheet_path(sheet), cells, style=style)
 
     def set_column_width(self, sheet: str, col: str | int, width: float) -> None:
         """Set a column width (Excel character units); *col* is ``"A"`` or 1."""

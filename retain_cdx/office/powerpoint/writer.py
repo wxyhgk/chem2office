@@ -4,7 +4,12 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from retain_cdx.ole.embed import write_cdx_to_ole
+from retain_cdx.ole import (
+    MAX_EMBEDDED_EMF,
+    build_enhmetafile_presentation,
+    emu_to_himetric,
+    write_cdx_to_ole,
+)
 from retain_cdx.render.preview import preview_extension, render_preview
 from retain_cdx.resources import bundled_template_pptx
 from retain_cdx.structure import StructureSource
@@ -150,14 +155,6 @@ class PowerPointCDXWriter:
                 cdx_path = work / f"structure{index + 1}.cdx"
                 structure.write_cdx(cdx_path)
 
-                container_path = work / f"oleObject{index + 1}.bin"
-                write_cdx_to_ole(
-                    container_path,
-                    cdx_path,
-                    template_ole=self._template.container,
-                    stream_name="CONTENTS",
-                )
-
                 image_path = work / f"image{index + 1}.{extension}"
                 render_preview(
                     cdx_path,
@@ -171,6 +168,19 @@ class PowerPointCDXWriter:
                     backend=preview_options.backend,
                     style=preview_options.style,
                     target_aspect=box.width / box.height if box.height else None,
+                    # 缓存渲染要把 EMF 藏进一份 WMF 里，两个都从同一份 SVG 导出。
+                    companion_wmf=(extension == "emf"),
+                )
+
+                presentation = self._build_presentation(image_path, box)
+
+                container_path = work / f"oleObject{index + 1}.bin"
+                write_cdx_to_ole(
+                    container_path,
+                    cdx_path,
+                    template_ole=self._template.container,
+                    stream_name="CONTENTS",
+                    presentation=presentation,
                 )
 
                 append_ole_frame(
@@ -185,6 +195,29 @@ class PowerPointCDXWriter:
                     or structure.name
                     or f"Structure {index + 1}",
                 )
+
+    def _build_presentation(
+        self, image_path: Path, box: FramePlacement
+    ) -> bytes | None:
+        """缓存渲染（`\x02OlePres000`）——没有它，复制出去只会得到一张图片。
+
+        只有 EMF 预览才有；EMF 必须整份放进一条 WMFC 注释记录，超过
+        `MAX_EMBEDDED_EMF` 时宁可不挂（复制退化好过让 PowerPoint 崩）。
+        """
+        if image_path.suffix != ".emf":
+            return None
+        emf = image_path.read_bytes()
+        if len(emf) > MAX_EMBEDDED_EMF:
+            return None
+        wmf_path = image_path.with_suffix(".wmf")
+        if not wmf_path.exists():
+            return None
+        return build_enhmetafile_presentation(
+            emf,
+            wmf_path.read_bytes(),
+            width_himetric=emu_to_himetric(box.width),
+            height_himetric=emu_to_himetric(box.height),
+        )
 
     def _resolve_box(
         self,
