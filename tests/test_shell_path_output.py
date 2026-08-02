@@ -31,6 +31,9 @@ _GUID = re.compile(r"\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{
 
 def _insert(output: Path, **kwargs) -> zipfile.ZipFile:
     with ExcelCDXWriter(BLANK) as writer:
+        # 显式钉住 png：默认的 "auto" 取决于机器上有没有 Inkscape，
+        # 而这个测试比对的是产物构成，必须确定。
+        kwargs.setdefault("preview_format", "png")
         writer.insert_cdx(
             CDX, sheet="Sheet1", cell="A1", shell=ExcelShellTemplate(SHELL), **kwargs
         )

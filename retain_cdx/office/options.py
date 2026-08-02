@@ -14,8 +14,9 @@ class PreviewOptions:
     thick_lines: bool = False
     no_margin: bool = False
     mono: bool = True
-    # "png" default; "emf" uses SVG + Inkscape; "auto" prefers emf when available.
-    format: PreviewFormat = "png"
+    # "auto"：装了 Inkscape 就走矢量 EMF，否则退回 PNG。矢量更清晰、文件更小、
+    # 渲染更快，而且只有矢量才能挂渲染缓存（见 presentation_cache）。
+    format: PreviewFormat = "auto"
     # "auto" prefers RDKit ACS1996, then Open Babel.
     backend: PreviewBackend = "auto"
     # RDKit drawing style; ACS1996 is monochrome journal style.

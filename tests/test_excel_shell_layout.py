@@ -219,6 +219,8 @@ def test_generated_insert_path_creates_ole_and_preview(
             Path("tests/fixtures/test.cdx"),
             sheet="Sheet1",
             cell="A1",
+            # 钉住 png：默认 "auto" 随机器上有无 Inkscape 而变，这里断言的是部件名。
+            preview_format="png",
         )
         writer.save(output)
 
@@ -273,6 +275,8 @@ def test_generated_insert_many_creates_multiple_objects(
             ],
             sheet="Sheet1",
             start_cell="A1",
+            # 钉住 png：默认 "auto" 随机器上有无 Inkscape 而变，这里断言的是部件名。
+            preview_format="png",
         )
         writer.save(output)
 
@@ -330,8 +334,13 @@ def test_repeated_insert_same_sheet_appends_objects(
 
     output = tmp_path / "output.xlsx"
     with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
-        writer.insert_cdx("tests/fixtures/test.cdx", sheet="Sheet1", cell="A1")
-        writer.insert_cdx("tests/fixtures/test.cdx", sheet="Sheet1", cell="A2")
+        # 钉住 png：默认 "auto" 随机器上有无 Inkscape 而变，这里断言的是部件名。
+        writer.insert_cdx(
+            "tests/fixtures/test.cdx", sheet="Sheet1", cell="A1", preview_format="png"
+        )
+        writer.insert_cdx(
+            "tests/fixtures/test.cdx", sheet="Sheet1", cell="A2", preview_format="png"
+        )
         writer.save(output)
 
     with zipfile.ZipFile(output) as z:
@@ -544,6 +553,8 @@ def test_shell_preview_matches_display_box_aspect_and_has_no_border(
             preview_width=700,
             preview_height=700,
             preview_no_margin=True,
+            # 这个测试要打开预览位图量像素，必须是 png。
+            preview_format="png",
         )
         writer.save(output)
 

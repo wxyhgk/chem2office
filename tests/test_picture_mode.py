@@ -25,6 +25,10 @@ _REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 def _insert_pictures(output: Path, monkeypatch, *, count: int = 3, **kwargs):
     patch_preview_renderers(monkeypatch)
     sources = ["tests/fixtures/test.cdx"] * count
+    # 钉住 png：默认 "auto" 随机器上有无 Inkscape 而变，这些测试断言部件名和内容类型。
+    kwargs.setdefault(
+        "display", ExcelDisplayOptions(preview=PreviewOptions(format="png"))
+    )
     with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
         writer.insert_pictures_many(
             sources, sheet="Sheet1", start_cell="B2", **kwargs

@@ -27,7 +27,7 @@ class PreviewSpec:
     thick_lines: bool = False
     no_margin: bool = False
     mono: bool = True
-    format: PreviewFormat = "png"
+    format: PreviewFormat = "auto"
     backend: PreviewBackend = "auto"
     style: PreviewStyle = "acs1996"
     # Strategy B: letterbox into fixed OLE box (set by source when known).

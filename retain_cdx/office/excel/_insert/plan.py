@@ -83,7 +83,7 @@ def build_insert_plan(
     normalize_fill_ratio: float = 0.8,
     preserve_aspect: bool = True,
     presentation_cache: bool | None = None,
-    preview_format: PreviewFormat = "png",
+    preview_format: PreviewFormat = "auto",
     preview_mono: bool = True,
     preview_backend: PreviewBackend = "auto",
     preview_style: PreviewStyle = "acs1996",

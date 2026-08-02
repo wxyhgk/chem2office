@@ -80,7 +80,9 @@ Excel OLE 生成器。
   - RDKit + `pycdxml`（`.[chem]` 会安装）— 默认，ACS 1996 期刊风格
   - Open Babel 命令行（`obabel`）— 回退方案
 - 可选：`Pillow`（用于预览图裁剪/letterbox，`.[dev]` 会安装）
-- 可选：Inkscape（`preview_format="emf"` 矢量预览需要）
+- 可选但建议装：Inkscape。预览默认 `preview_format="auto"`——装了就走矢量 EMF
+  （更清晰、文件更小、渲染更快），没装则退回 PNG。只有矢量预览才能挂渲染缓存，
+  没有缓存时把结构复制到 PowerPoint 会自动唤起 ChemDraw 现场出图。
 - 仅 `scripts/cli/` 脚本需要：`openpyxl`（用来准备/预处理普通表格部分；
   库本体不依赖它）
 

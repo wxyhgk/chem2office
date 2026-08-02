@@ -134,3 +134,49 @@ def test_opting_out_restores_the_literal_box(tmp_path, monkeypatch):
 )
 def test_fit_box(aspect, expected):
     assert _fit_box(aspect, 145, 100) == expected
+
+
+# --- 默认预览格式 ---------------------------------------------------------------
+
+
+def test_preview_format_defaults_to_auto():
+    """默认走矢量：更清晰、文件更小、渲染更快，而且只有矢量能挂渲染缓存。
+
+    是 ``"auto"`` 而不是 ``"emf"``：Inkscape 在 README 里是可选依赖，硬要 EMF
+    会让没装它的机器上默认路径直接失败。``"auto"`` 有则用、无则退回 PNG。
+    """
+    import inspect
+
+    from retain_cdx import ExcelCDXWriter
+    from retain_cdx.office.options import PreviewOptions
+
+    assert PreviewOptions().format == "auto"
+    for method in (ExcelCDXWriter.insert_cdx, ExcelCDXWriter.insert_cdx_many):
+        default = inspect.signature(method).parameters["preview_format"].default
+        assert default == "auto", method.__name__
+
+
+def test_cache_rides_on_the_vector_default(tmp_path, monkeypatch):
+    """默认参数下，装了 Inkscape 就该同时拿到矢量预览和渲染缓存。
+
+    缺了缓存，把结构复制到 PowerPoint 会唤起 ChemDraw 现场出图。
+    """
+    import io
+
+    import olefile
+
+    from retain_cdx.render.preview import inkscape_available
+
+    if not inkscape_available():
+        pytest.skip("no Inkscape: auto resolves to png, which carries no cache")
+
+    output = tmp_path / "default.xlsx"
+    with ExcelCDXWriter(BLANK) as writer:
+        writer.insert_cdx("tests/fixtures/test.cdx", sheet="Sheet1", cell="B2")
+        writer.save(output)
+
+    with zipfile.ZipFile(output) as archive:
+        assert any(n.endswith(".emf") for n in archive.namelist()), "默认应走矢量预览"
+        name = [n for n in archive.namelist() if "/embeddings/" in n][0]
+        streams = {e[0] for e in olefile.OleFileIO(io.BytesIO(archive.read(name))).listdir()}
+    assert "\x02OlePres000" in streams, "矢量预览下默认应挂上渲染缓存"

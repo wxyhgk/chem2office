@@ -21,6 +21,18 @@ EMT-1285 只有 2%，所以像是「有些」结构有问题。根因是显示�
   预览超采样、letterbox 比例全部改为逐个取值，`render_emf_many` 增加
   `target_aspects=`。
 
+### 预览默认走矢量
+
+`preview_format` / `PreviewOptions.format` 默认从 `"png"` 改为 `"auto"`：装了
+Inkscape 就出 EMF，没装则退回 PNG。不直接写死 `"emf"` 是因为 Inkscape 在 README
+里是可选依赖，硬要它会让没装的机器上默认路径直接失败。
+
+矢量在每个维度上都更好——更清晰、文件更小、渲染更快（2812 个分子那次实测每 50 个
+0.3 MB / 2.9s，PNG 是 4.2 MB / 10.9s）——而且只有矢量能挂渲染缓存。
+
+代价是同一份代码在不同机器上产物不同。断言部件名或内容类型的测试因此显式钉住
+`preview_format="png"`，并写明原因。
+
 ### Excel 也挂渲染缓存
 
 不带 `\x02OlePres000` 的对象复制到 PowerPoint 时，目标程序拿不到现成的图，会
@@ -28,7 +40,8 @@ EMT-1285 只有 2%，所以像是「有些」结构有问题。根因是显示�
 优化，是「不带就不能用」，所以默认挂上。
 
 `presentation_cache` 三态：`None`（默认）表示矢量预览挂、位图预览不挂；显式
-`True`/`False` 覆盖。位图不挂是因为 CF_ENHMETAFILE 只吃 EMF，单为缓存再跑一遍
+`True`/`False` 覆盖。配合上面的 `"auto"`，装了 Inkscape 的机器用默认参数就能同时
+拿到矢量预览和缓存。位图不挂是因为 CF_ENHMETAFILE 只吃 EMF，单为缓存再跑一遍
 矢量管线不划算；显式要求 `True` 而预览是 PNG 时明确报错，不静默降级。
 
 代价是体积：每个对象多 10~15 KB（六个结构 28 KB → 47 KB），几千个结构的表要多
