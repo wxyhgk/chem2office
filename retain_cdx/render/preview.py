@@ -458,16 +458,18 @@ def svg_to_emf_batch(
     *,
     text_to_path: bool = True,
     chunk_size: int = _INKSCAPE_SHELL_CHUNK,
-    companion_wmf: bool = False,
+    companion_wmf_dir: Path | None = None,
 ) -> None:
     """Convert many SVG files to EMF with one or more ``inkscape --shell`` sessions.
 
     Avoids cold-starting the full Inkscape.app per file (often ~0.5s on macOS).
 
-    *companion_wmf* also writes ``<emf>.with_suffix(".wmf")`` from the same open
-    document — PowerPoint's OLE presentation cache needs both (the EMF rides
-    inside the WMF; see `retain_cdx/ole/presentation.py`). Exporting twice per
-    open costs one extra Inkscape action, not a second SVG render.
+    *companion_wmf_dir* also writes ``<dir>/<emf stem>.wmf`` from the same open
+    document — the OLE presentation cache needs both (the EMF rides inside the
+    WMF; see `retain_cdx/ole/presentation.py`). Exporting twice per open costs
+    one extra Inkscape action, not a second SVG render. It must be a scratch
+    directory: the EMF often lands inside an OOXML package, and a stray .wmf
+    there ships as an undeclared part.
     """
     if not pairs:
         return
@@ -497,9 +499,10 @@ def svg_to_emf_batch(
                 # Match CLI ``--export-text-to-path`` so Excel does not sub fonts.
                 actions.append("export-text-to-path:true")
             actions.append("export-do")
-            if companion_wmf:
+            if companion_wmf_dir is not None:
                 actions.append(
-                    f"export-filename:{_inkscape_action_path(emf.with_suffix('.wmf'))}"
+                    "export-filename:"
+                    + _inkscape_action_path(companion_wmf_dir / f"{emf.stem}.wmf")
                 )
                 actions.append("export-do")
             actions.append("file-close")
@@ -519,8 +522,8 @@ def svg_to_emf_batch(
             raise SystemExit(f"inkscape --shell failed: {detail}")
 
         expected = [emf for _, emf in chunk]
-        if companion_wmf:
-            expected += [emf.with_suffix(".wmf") for _, emf in chunk]
+        if companion_wmf_dir is not None:
+            expected += [companion_wmf_dir / f"{emf.stem}.wmf" for _, emf in chunk]
         missing = [
             str(path)
             for path in expected
@@ -553,7 +556,7 @@ def render_emf(
     target_aspect: float | None = None,
     crop_padding: int = 2,
     fill_ratio: float = 0.92,
-    companion_wmf: bool = False,
+    companion_wmf_dir: Path | None = None,
 ) -> str:
     """Render CDX to a **vector** EMF via SVG + Inkscape.
 
@@ -576,7 +579,7 @@ def render_emf(
         target_aspect=target_aspect,
         crop_padding=crop_padding,
         fill_ratio=fill_ratio,
-        companion_wmf=companion_wmf,
+        companion_wmf_dir=companion_wmf_dir,
     )
     return used[0]
 
@@ -594,9 +597,10 @@ def render_emf_many(
     style: PreviewStyle = "acs1996",
     backend: PreviewBackend = "auto",
     target_aspect: float | None = None,
+    target_aspects: Sequence[float | None] | None = None,
     crop_padding: int = 2,
     fill_ratio: float = 0.92,
-    companion_wmf: bool = False,
+    companion_wmf_dir: Path | None = None,
 ) -> list[str]:
     """Render many CDX→EMF jobs with batched ``inkscape --shell`` exports.
 
@@ -612,6 +616,8 @@ def render_emf_many(
             "Install it (e.g. `brew install inkscape`)."
         )
 
+    if target_aspects is not None and len(target_aspects) != len(jobs):
+        raise ValueError("target_aspects must have one entry per job")
     aspect = _resolve_emf_aspect(
         target_aspect=target_aspect,
         width=width,
@@ -642,17 +648,24 @@ def render_emf_many(
                 style=style,
                 backend=backend,
             )
-            if aspect is not None and aspect > 0:
+            # 保比例插入时每个分子的框比例都不同，letterbox 必须逐个来。
+            job_aspect = aspect if target_aspects is None else _resolve_emf_aspect(
+                target_aspect=target_aspects[index],
+                width=width,
+                height=height,
+                image_size=image_size,
+            )
+            if job_aspect is not None and job_aspect > 0:
                 letterbox_svg_to_aspect(
                     svg_path,
-                    target_aspect=aspect,
+                    target_aspect=job_aspect,
                     fill_ratio=fill_ratio,
                     padding_px=float(crop_padding),
                 )
             pairs.append((svg_path, emf_path))
             used_backends.append(used)
 
-        svg_to_emf_batch(pairs, companion_wmf=companion_wmf)
+        svg_to_emf_batch(pairs, companion_wmf_dir=companion_wmf_dir)
 
     return used_backends
 
@@ -792,7 +805,7 @@ def render_preview(
     keep_size: bool = True,
     target_aspect: float | None = None,
     fill_ratio: float = 0.92,
-    companion_wmf: bool = False,
+    companion_wmf_dir: Path | None = None,
 ) -> ResolvedPreviewFormat:
     """Render a preview image.
 
@@ -821,7 +834,7 @@ def render_preview(
             target_aspect=target_aspect,
             crop_padding=crop_padding,
             fill_ratio=fill_ratio,
-            companion_wmf=companion_wmf,
+            companion_wmf_dir=companion_wmf_dir,
         )
         return "emf"
 

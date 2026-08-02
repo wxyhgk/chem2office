@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Excel 里的结构不再变形
+
+从 Excel 复制结构到 PowerPoint，有些分子会被拉伸——咖啡因横向拉了 18%，而
+EMT-1285 只有 2%，所以像是「有些」结构有问题。根因是显示框的比例与 CDX 内容的
+比例不符：Excel 里看不出来（预览图已经 letterbox 成框的比例），但别的程序按 CDX
+重新渲染时会填满框。
+
+- `_insert/plan.py` 原本只算 `sources[0].content_aspect` 再套给整批，所以第一个
+  分子是对的、后面全错——最难发现的那种错法。改成逐个分子算。
+- 新增 `_fit_box()`：把分子按自己的比例塞进 `width_px × height_px`。高度为基准
+  （行高齐整），宽度随分子变；宽到超出 `width_px` 才反过来受限。
+- `preserve_aspect` 默认改为 `True`。旧默认会静默产出「在 Excel 里看着对、粘到
+  别处就变形」的对象。
+- 保比例不再顺手改 `row_height`。原来的实现会覆盖调用方给的行高，默认一开就会把
+  所有人的行高从 110pt 压成 75pt——那是替调用方改排版。
+- `LayoutSpec.boxes` / `.box(index)` 承载逐个对象的框；VML 尺寸、drawing 锚点、
+  预览超采样、letterbox 比例全部改为逐个取值，`render_emf_many` 增加
+  `target_aspects=`。
+
+### Excel 也挂渲染缓存
+
+不带 `\x02OlePres000` 的对象复制到 PowerPoint 时，目标程序拿不到现成的图，会
+**自动唤起 ChemDraw** 现场渲染——软件会自己弹出来。实测下来这不是可有可无的
+优化，是「不带就不能用」，所以默认挂上。
+
+`presentation_cache` 三态：`None`（默认）表示矢量预览挂、位图预览不挂；显式
+`True`/`False` 覆盖。位图不挂是因为 CF_ENHMETAFILE 只吃 EMF，单为缓存再跑一遍
+矢量管线不划算；显式要求 `True` 而预览是 PNG 时明确报错，不静默降级。
+
+代价是体积：每个对象多 10~15 KB（六个结构 28 KB → 47 KB），几千个结构的表要多
+几十 MB，用 `presentation_cache=False` 关掉。渲染时间几乎不变——Inkscape 批处理
+里只多一个导出动作，SVG 不重渲。PowerPoint 侧同样是三态，默认开。
+- `companion_wmf` 从 bool 改成 `companion_wmf_dir`：伴生 WMF 曾落在 `xl/media/`
+  里被打进包，成了没有内容类型声明的部件（包校验器逮到的）。现在写进临时目录，
+  从构造上杜绝。
+
 ## 0.0.14 — 2026-08-02
 
 PowerPoint 里的 ChemDraw 对象现在可以复制到别处而不退化成图片；Excel 单元格支持

@@ -217,3 +217,102 @@ def test_cache_matches_the_structure_it_ships_with(tmp_path):
             )
     assert payloads[0][0] != payloads[1][0], "两个分子的 CDX 应不同"
     assert payloads[0][1] != payloads[1][1], "两个分子的缓存渲染也应不同"
+
+
+# --- Excel 侧 -----------------------------------------------------------------
+
+
+def _excel_streams(path: Path) -> list[set[str]]:
+    with zipfile.ZipFile(path) as archive:
+        return [
+            {entry[0] for entry in olefile.OleFileIO(io.BytesIO(archive.read(name))).listdir()}
+            for name in sorted(n for n in archive.namelist() if "/embeddings/" in n)
+        ]
+
+
+def test_excel_cache_follows_the_preview_format(tmp_path):
+    """默认三态：矢量预览挂缓存，位图预览不挂。
+
+    缺了缓存，把结构复制到 PowerPoint 会唤起 ChemDraw 现场出图（软件自己弹
+    出来）。位图预览没有可用的载荷——CF_ENHMETAFILE 只吃 EMF——单为缓存再跑
+    一遍矢量管线不值当。
+    """
+    from retain_cdx import ExcelCDXWriter
+
+    for fmt, expected in (("emf", True), ("png", False)):
+        output = tmp_path / f"{fmt}.xlsx"
+        with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+            writer.insert_cdx(CDX, sheet="Sheet1", cell="B2", preview_format=fmt)
+            writer.save(output)
+        (streams,) = _excel_streams(output)
+        assert (PRESENTATION_STREAM in streams) is expected, f"preview_format={fmt}"
+
+
+def test_excel_cache_can_be_switched_off(tmp_path):
+    """几千个结构的表可以关掉——每个对象多 10~15 KB。"""
+    from retain_cdx import ExcelCDXWriter
+
+    output = tmp_path / "no_cache.xlsx"
+    with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+        writer.insert_cdx(
+            CDX, sheet="Sheet1", cell="B2", preview_format="emf",
+            presentation_cache=False,
+        )
+        writer.save(output)
+
+    (streams,) = _excel_streams(output)
+    assert PRESENTATION_STREAM not in streams
+
+
+def test_excel_cache_can_be_switched_on(tmp_path):
+    """开了之后复制到 PowerPoint 不会再唤起 ChemDraw 现场出图。"""
+    from retain_cdx import ExcelCDXWriter
+
+    output = tmp_path / "cached.xlsx"
+    with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+        writer.insert_cdx_many(
+            ["tests/fixtures/1.cdx", "tests/fixtures/2.cdx"],
+            sheet="Sheet1",
+            start_cell="B2",
+            preview_format="emf",
+            presentation_cache=True,
+        )
+        writer.save(output)
+
+    for streams in _excel_streams(output):
+        assert PRESENTATION_STREAM in streams
+
+    with zipfile.ZipFile(output) as archive:
+        assert not [n for n in archive.namelist() if n.endswith(".wmf")], (
+            "伴生 WMF 是缓存的原料，落进包里就是一个没有内容类型声明的部件"
+        )
+
+
+def test_excel_cache_needs_a_vector_preview(tmp_path):
+    """PNG 不能当 CF_ENHMETAFILE 载荷——明确报错，不静默降级。"""
+    from retain_cdx import ExcelCDXWriter
+
+    with pytest.raises(ValueError, match="vector preview"):
+        with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
+            writer.insert_cdx(
+                CDX, sheet="Sheet1", cell="B2", preview_format="png",
+                presentation_cache=True,
+            )
+            writer.save(tmp_path / "never.xlsx")
+
+
+def test_powerpoint_cache_can_be_turned_off(tmp_path):
+    """PPT 默认开，但几百页的文件可以关掉省体积。"""
+    output = tmp_path / "no_cache.pptx"
+    with PowerPointCDXWriter(BLANK_PPTX) as writer:
+        writer.insert_cdx(
+            CDX,
+            placement=PowerPointPlacement(x="1cm", y="1cm", width="4cm"),
+            preview=PreviewOptions(format="emf", presentation_cache=False),
+        )
+        writer.save(output)
+
+    with zipfile.ZipFile(output) as archive:
+        name = [n for n in archive.namelist() if "/embeddings/" in n][0]
+        streams = {e[0] for e in olefile.OleFileIO(io.BytesIO(archive.read(name))).listdir()}
+    assert PRESENTATION_STREAM not in streams

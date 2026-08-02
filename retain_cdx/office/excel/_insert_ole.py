@@ -16,10 +16,17 @@ Windows Excel 真实产出的片段，而不是自己拼 XML。
 
 from __future__ import annotations
 
+import tempfile
 import xml.etree.ElementTree as ET
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
+from retain_cdx.ole import (
+    MAX_EMBEDDED_EMF,
+    build_enhmetafile_presentation,
+    emu_to_himetric,
+)
 from retain_cdx.ole.embed import write_cdx_to_ole
 from retain_cdx.render.preview import (
     preview_extension,
@@ -180,12 +187,19 @@ def _write_parts(
     vml_rels = read_rels(vml_rels_path)
 
     shape_id = _next_shape_id(drawing_path, vml_path)
-    width, height = _preview_size(layout, preview, extension)
-    target_aspect = _target_aspect(layout, preview)
+
+    if preview.presentation_cache and resolved != "emf":
+        raise ValueError(
+            "presentation_cache needs a vector preview; pass preview_format='emf'"
+        )
 
     slots: list[_Slot] = []
     emf_jobs: list[tuple[Path, Path]] = []
+    emf_aspects: list[float | None] = []
+    cache_jobs: list[tuple[Path, Path, Path, int]] = []
     for index, cdx_path in enumerate(cdx_paths, start=1):
+        width, height = _preview_size(layout, preview, extension, index - 1)
+        target_aspect = _target_aspect(layout, preview, index - 1)
         bin_name = unique_part_name(embeddings, f"{prefix}_oleObject{index}.bin")
         write_cdx_to_ole(
             embeddings / bin_name, cdx_path, template_ole=template.container
@@ -195,6 +209,11 @@ def _write_parts(
         image_path = media / image_name
         if resolved == "emf":
             emf_jobs.append((cdx_path, image_path))
+            emf_aspects.append(target_aspect)
+            if preview.presentation_cache:
+                cache_jobs.append(
+                    (cdx_path, embeddings / bin_name, image_path, index - 1)
+                )
         else:
             render_preview(
                 cdx_path,
@@ -225,18 +244,32 @@ def _write_parts(
         shape_id += 1
 
     if emf_jobs:
-        render_emf_many(
-            emf_jobs,
-            width=width,
-            height=height,
-            thick_lines=preview.thick_lines,
-            no_margin=preview.no_margin,
-            mono=preview.mono,
-            backend=preview.backend,
-            style=preview.style,
-            target_aspect=target_aspect,
-            fill_ratio=preview.fill_ratio,
-        )
+        with ExitStack() as stack:
+            scratch = (
+                Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="retain_cdx_wmf_")))
+                if cache_jobs
+                else None
+            )
+            render_emf_many(
+                emf_jobs,
+                width=preview.width,
+                height=preview.height,
+                thick_lines=preview.thick_lines,
+                no_margin=preview.no_margin,
+                mono=preview.mono,
+                backend=preview.backend,
+                style=preview.style,
+                # 每个分子的框比例不同，letterbox 也要逐个来。
+                target_aspects=emf_aspects,
+                fill_ratio=preview.fill_ratio,
+                # 伴生 WMF 只是缓存的原料，绝不能落在 xl/media 里——那会变成
+                # 一个没有内容类型声明的部件，Excel 打开即报修复。
+                companion_wmf_dir=scratch,
+            )
+            for cdx_path, bin_path, image_path, index in cache_jobs:
+                _attach_presentation(
+                    cdx_path, bin_path, image_path, scratch, layout.box(index), template
+                )
 
     build_rels(sheet_rels_path, sheet_rels)
     vml_rels_path.parent.mkdir(parents=True, exist_ok=True)
@@ -244,21 +277,59 @@ def _write_parts(
     return slots
 
 
+def _attach_presentation(
+    cdx_path: Path,
+    bin_path: Path,
+    image_path: Path,
+    scratch: Path,
+    box: tuple[int, int],
+    template: ExcelOleTemplate,
+) -> None:
+    """把渲染缓存（`\x02OlePres000`）写进容器。
+
+    没有它，把结构从 Excel 复制到 PowerPoint 时，目标程序拿不到现成的图，
+    只好唤起 OLE 服务器现场渲染——ChemDraw 会被自动拉起来。
+
+    EMF 必须整份放进一条 WMFC 注释记录，超过 `MAX_EMBEDDED_EMF` 的就跳过：
+    复制时多启动一次 ChemDraw，好过产出会让 PowerPoint 崩的文件。
+    """
+    from retain_cdx.office.excel._utils import EMU_PER_PIXEL
+
+    emf = image_path.read_bytes()
+    wmf_path = scratch / f"{image_path.stem}.wmf"
+    if len(emf) > MAX_EMBEDDED_EMF or not wmf_path.exists():
+        return
+    width_px, height_px = box
+    presentation = build_enhmetafile_presentation(
+        emf,
+        wmf_path.read_bytes(),
+        width_himetric=emu_to_himetric(width_px * EMU_PER_PIXEL),
+        height_himetric=emu_to_himetric(height_px * EMU_PER_PIXEL),
+    )
+    write_cdx_to_ole(
+        bin_path, cdx_path, template_ole=template.container, presentation=presentation
+    )
+
+
 def _preview_size(
-    layout: LayoutSpec, preview: PreviewSpec, extension: str
+    layout: LayoutSpec, preview: PreviewSpec, extension: str, index: int = 0
 ) -> tuple[int | None, int | None]:
     if preview.width is not None or preview.height is not None:
         return preview.width, preview.height
     if extension != "png":
         return None, None
     # 位图默认按显示框超采样：小分子 flexi 渲染只有 ~25px，Excel 放大后发糊。
-    return layout.width_px * _RASTER_SUPERSAMPLE, layout.height_px * _RASTER_SUPERSAMPLE
+    box_w, box_h = layout.box(index)
+    return box_w * _RASTER_SUPERSAMPLE, box_h * _RASTER_SUPERSAMPLE
 
 
-def _target_aspect(layout: LayoutSpec, preview: PreviewSpec) -> float | None:
+def _target_aspect(
+    layout: LayoutSpec, preview: PreviewSpec, index: int = 0
+) -> float | None:
     if preview.target_aspect and preview.target_aspect > 0:
         return preview.target_aspect
-    return (layout.width_px / layout.height_px) if layout.height_px else None
+    box_w, box_h = layout.box(index)
+    return (box_w / box_h) if box_h else None
 
 
 def _next_shape_id(drawing_path: Path, vml_path: Path) -> int:
@@ -280,14 +351,13 @@ def _next_shape_id(drawing_path: Path, vml_path: Path) -> int:
 
 
 def _anchors(metrics: ExcelGridMetrics, layout: LayoutSpec, count: int) -> list:
-    size = ShellSize(layout.width_px, layout.height_px)
     return [
         metrics.anchor_for_box(
             start_col=layout.col,
             start_row=layout.row + index,
             offset_x_px=layout.offset_x_px,
             offset_y_px=layout.offset_y_px,
-            size=size,
+            size=ShellSize(*layout.box(index)),
         )
         for index in range(count)
     ]
@@ -345,7 +415,8 @@ def _append_vml(
     from retain_cdx.office.excel._utils import POINTS_PER_PIXEL
 
     root = ET.fromstring(vml_path.read_text(encoding="utf-8"))
-    for slot, anchor in zip(slots, anchors):
+    for index, (slot, anchor) in enumerate(zip(slots, anchors)):
+        box_w, box_h = layout.box(index)
         shape = template.new_vml_shape()
         shape.set("id", f"_x0000_s{slot.shape_id}")
         # style 的绝对位置按目标表真实网格算。Excel 用 x:Anchor 定位，
@@ -355,8 +426,8 @@ def _append_vml(
         shape.set(
             "style",
             f"position:absolute;margin-left:{left_pt:g}pt;margin-top:{top_pt:g}pt;"
-            f"width:{layout.width_px * POINTS_PER_PIXEL:g}pt;"
-            f"height:{layout.height_px * POINTS_PER_PIXEL:g}pt;z-index:{slot.shape_id}",
+            f"width:{box_w * POINTS_PER_PIXEL:g}pt;"
+            f"height:{box_h * POINTS_PER_PIXEL:g}pt;z-index:{slot.shape_id}",
         )
         for imagedata in shape.iter(f"{{{NS_V}}}imagedata"):
             imagedata.set(f"{{{NS_O}}}relid", slot.vml_rid)

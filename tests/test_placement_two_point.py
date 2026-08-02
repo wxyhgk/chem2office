@@ -316,7 +316,37 @@ def test_two_point_feeds_shell_geometry(tmp_path: Path, placeholder_previews) ->
 
 
 def test_single_anchor_placement_unchanged(tmp_path: Path, placeholder_previews) -> None:
-    """Backward compat: no to_cell → width_px/height_px still size the box."""
+    """Backward compat: no to_cell → width_px/height_px still size the box.
+
+    ``preserve_aspect=False`` is what makes them literal; the default fits the
+    molecule inside them instead (see the test below).
+    """
+    output = tmp_path / "out.xlsx"
+    insert_two_point(
+        default_grid_workbook(tmp_path),
+        output,
+        ExcelPlacement("A1"),
+        width_px=145,
+        height_px=100,
+        preserve_aspect=False,
+    )
+
+    (anchor,) = drawing_anchors(output)
+    width_emu, height_emu = anchor_size_emu(anchor, output)
+    assert width_emu == 145 * EMU_PER_PIXEL
+    assert height_emu == 100 * EMU_PER_PIXEL
+
+
+def test_single_anchor_default_fits_the_molecule(tmp_path: Path, placeholder_previews) -> None:
+    """Default `preserve_aspect=True`: the box takes the molecule's own shape.
+
+    A box whose aspect differs from the CDX content distorts the structure as
+    soon as another application re-renders it — pasting from Excel into
+    PowerPoint is the case that surfaced this. Inside Excel it looks fine
+    because the preview image is letterboxed into the box.
+    """
+    from retain_cdx.structure.geometry import cdx_content_aspect
+
     output = tmp_path / "out.xlsx"
     insert_two_point(
         default_grid_workbook(tmp_path),
@@ -328,5 +358,7 @@ def test_single_anchor_placement_unchanged(tmp_path: Path, placeholder_previews)
 
     (anchor,) = drawing_anchors(output)
     width_emu, height_emu = anchor_size_emu(anchor, output)
-    assert width_emu == 145 * EMU_PER_PIXEL
-    assert height_emu == 100 * EMU_PER_PIXEL
+    aspect = cdx_content_aspect(Path(CDX).read_bytes())
+    assert width_emu / height_emu == pytest.approx(aspect, rel=0.02)
+    assert width_emu <= 145 * EMU_PER_PIXEL, "box must stay inside width_px"
+    assert height_emu <= 100 * EMU_PER_PIXEL, "box must stay inside height_px"

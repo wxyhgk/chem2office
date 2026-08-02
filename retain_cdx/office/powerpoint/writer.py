@@ -169,10 +169,14 @@ class PowerPointCDXWriter:
                     style=preview_options.style,
                     target_aspect=box.width / box.height if box.height else None,
                     # 缓存渲染要把 EMF 藏进一份 WMF 里，两个都从同一份 SVG 导出。
-                    companion_wmf=(extension == "emf"),
+                    companion_wmf_dir=work if extension == "emf" else None,
                 )
 
-                presentation = self._build_presentation(image_path, box)
+                presentation = (
+                    None
+                    if preview_options.presentation_cache is False
+                    else self._build_presentation(image_path, box)
+                )
 
                 container_path = work / f"oleObject{index + 1}.bin"
                 write_cdx_to_ole(
@@ -209,7 +213,7 @@ class PowerPointCDXWriter:
         emf = image_path.read_bytes()
         if len(emf) > MAX_EMBEDDED_EMF:
             return None
-        wmf_path = image_path.with_suffix(".wmf")
+        wmf_path = image_path.with_suffix(".wmf")  # work 目录里，不进包
         if not wmf_path.exists():
             return None
         return build_enhmetafile_presentation(

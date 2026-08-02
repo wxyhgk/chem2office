@@ -97,7 +97,17 @@ Windows PowerPoint 上一个变体一个变体试出来的（2026-08-02）：
 - **Inkscape 直出的 WMF 带 22 字节 placeable 头**，进 OLE 前要剥掉。
 
 EMF 和 WMF 从同一份 SVG 导出，在同一次 `inkscape --shell` 打开里连着导两次
-（`render_preview(..., companion_wmf=True)`），只多一次导出动作，不多渲染一遍。
+（`companion_wmf_dir=<临时目录>`），只多一次导出动作，不多渲染一遍。目录必须是
+临时的：EMF 常常直接落在 OOXML 包里，旁边多出一个 `.wmf` 就是一个没有内容类型
+声明的部件，Excel 打开即报修复。
+
+**Excel 侧同样需要。** 缺了它，把结构从 Excel 复制到 PowerPoint 时目标程序会
+唤起 ChemDraw 现场出图（软件自己弹出来），实测是「不带就不能用」，所以默认挂上。
+
+`presentation_cache` 三态：`None`（默认）= 矢量预览挂、位图预览不挂；显式
+`True`/`False` 覆盖。位图不挂是因为 CF_ENHMETAFILE 只吃 EMF，单为缓存再跑一遍
+矢量管线不划算。代价是每个对象多 10~15 KB——几千个结构的表要多几十 MB，
+用 `presentation_cache=False` 关掉。
 
 ### `chemdraw.py` — 「ChemDraw 是什么」
 

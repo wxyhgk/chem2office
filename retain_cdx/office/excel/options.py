@@ -63,7 +63,7 @@ class ExcelDisplayOptions:
     height: int | float | str = 100
     row_height: float | None = None
     col_width: float | None = 24
-    preserve_aspect: bool = False
+    preserve_aspect: bool = True
     normalize_cdx: bool = False
     normalize_margin: float = 18
     normalize_fill_ratio: float = 0.8

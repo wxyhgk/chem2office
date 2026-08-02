@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from retain_cdx.render.preview import PreviewBackend, PreviewFormat, PreviewStyle
+from retain_cdx.render.preview import (
+    PreviewBackend,
+    PreviewFormat,
+    PreviewStyle,
+    resolve_preview_format,
+)
 from retain_cdx.structure import StructureSource
 
 from retain_cdx.office.excel._utils import parse_cell, px_to_points
@@ -76,7 +81,8 @@ def build_insert_plan(
     normalize_cdx: bool = False,
     normalize_margin: float = 18,
     normalize_fill_ratio: float = 0.8,
-    preserve_aspect: bool = False,
+    preserve_aspect: bool = True,
+    presentation_cache: bool | None = None,
     preview_format: PreviewFormat = "png",
     preview_mono: bool = True,
     preview_backend: PreviewBackend = "auto",
@@ -106,6 +112,8 @@ def build_insert_plan(
         normalize_margin = display.normalize_margin
         normalize_fill_ratio = display.normalize_fill_ratio
         preserve_aspect = display.preserve_aspect
+        if display.preview.presentation_cache is not None:
+            presentation_cache = display.preview.presentation_cache
 
     # Two-point anchor: the display box spans the target sheet's real grid.
     # Width/height are resolved later by the executor (it can read the target
@@ -123,12 +131,20 @@ def build_insert_plan(
     if row_height is None and shell_path is None and not two_point:
         row_height = px_to_points(height_px)
 
+    if presentation_cache is None:
+        # 缺了渲染缓存，把结构复制到 PowerPoint 会唤起 ChemDraw 现场出图，
+        # 软件会自己弹出来——所以矢量预览时默认挂上。位图预览没有可用的载荷
+        # （CF_ENHMETAFILE 只吃 EMF），单为缓存再跑一遍矢量管线不值当，故不挂。
+        presentation_cache = resolve_preview_format(preview_format) == "emf"
+
+    boxes: tuple[tuple[int, int], ...] = ()
     if preserve_aspect and not two_point:
-        aspect = sources[0].content_aspect
-        if aspect and aspect > 0:
-            height_px = round(width_px / aspect)
-            if row_height is not None:
-                row_height = px_to_points(height_px)
+        # 逐个分子算——整批共用一个比例的话，除第一个以外全会被拉伸。
+        # 高度为基准（表格行高齐整），宽度随分子变；宽到超出 width_px 才反过来受限。
+        boxes = tuple(_fit_box(s.content_aspect, width_px, height_px) for s in sources)
+        # 行高不动：调用方给什么就是什么。框只在 width_px×height_px 里缩放，
+        # 不会长出去，所以没有把行撑高的理由；反过来按框改行高会把默认的
+        # 110pt 悄悄压成 75pt，等于替调用方改了排版。
 
     col, row = parse_cell(placement.cell)
     layout = LayoutSpec(
@@ -140,6 +156,7 @@ def build_insert_plan(
         col_width=col_width,
         offset_x_px=placement.offset_x_px,
         offset_y_px=placement.offset_y_px,
+        boxes=boxes,
     )
     preview = PreviewSpec(
         width=preview_width,
@@ -150,6 +167,7 @@ def build_insert_plan(
         format=preview_format,
         backend=preview_backend,
         style=preview_style,
+        presentation_cache=presentation_cache,
     )
     normalize = NormalizeSpec(
         enabled=normalize_cdx,
@@ -182,6 +200,21 @@ def shell_template_path(shell: ExcelShellTemplate | str | Path | None) -> Path |
     if isinstance(shell, ExcelShellTemplate):
         return Path(shell.xlsx)
     return Path(shell)
+
+
+def _fit_box(aspect: float | None, width_px: int, height_px: int) -> tuple[int, int]:
+    """把比例为 *aspect* 的分子塞进 (width_px, height_px)，不变形。
+
+    显示框的比例必须等于 CDX 内容的比例，否则对象一旦被别的程序按 CDX 重新
+    渲染（比如从 Excel 复制到 PowerPoint），就会被拉伸——Excel 里看不出来，
+    因为预览图已经 letterbox 成了框的比例。
+    """
+    if not aspect or aspect <= 0:
+        return width_px, height_px
+    width = round(height_px * aspect)
+    if width <= width_px:
+        return max(1, width), height_px
+    return width_px, max(1, round(width_px / aspect))
 
 
 def shell_preserve_aspect(shell: ExcelShellTemplate | str | Path | None) -> bool:

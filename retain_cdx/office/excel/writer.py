@@ -200,7 +200,8 @@ class ExcelCDXWriter:
         normalize_cdx: bool = False,
         normalize_margin: float = 18,
         normalize_fill_ratio: float = 0.8,
-        preserve_aspect: bool = False,
+        preserve_aspect: bool = True,
+        presentation_cache: bool | None = None,
     ) -> None:
         """Insert one CDX object at *sheet*!*cell*."""
         if placement is None:
@@ -235,6 +236,7 @@ class ExcelCDXWriter:
             normalize_margin=normalize_margin,
             normalize_fill_ratio=normalize_fill_ratio,
             preserve_aspect=preserve_aspect,
+            presentation_cache=presentation_cache,
         )
 
     def insert_cdx_many(
@@ -261,7 +263,8 @@ class ExcelCDXWriter:
         normalize_cdx: bool = False,
         normalize_margin: float = 18,
         normalize_fill_ratio: float = 0.8,
-        preserve_aspect: bool = False,
+        preserve_aspect: bool = True,
+        presentation_cache: bool | None = None,
     ) -> None:
         """Insert CDX objects vertically starting at *start_cell*."""
         cdx_sources = [
@@ -295,5 +298,6 @@ class ExcelCDXWriter:
             normalize_margin=normalize_margin,
             normalize_fill_ratio=normalize_fill_ratio,
             preserve_aspect=preserve_aspect,
+            presentation_cache=presentation_cache,
         )
         execute_insert(self.package_dir, cdx_sources, sheet=sheet, plan=plan)

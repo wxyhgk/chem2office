@@ -33,6 +33,9 @@ class PreviewSpec:
     # Strategy B: letterbox into fixed OLE box (set by source when known).
     target_aspect: float | None = None
     fill_ratio: float = 0.90
+    #: 把渲染缓存进容器（`\x02OlePres000`）。没有它，把结构复制到 PowerPoint
+    #: 会现场唤起 ChemDraw 来出图。代价是体积——每个对象多 10~15 KB。
+    presentation_cache: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,14 @@ class LayoutSpec:
     col_width: float | None = None
     offset_x_px: int = 0
     offset_y_px: int = 0
+    #: 逐个对象的框（保比例时每个分子形状不同）。空表示全体共用 width/height。
+    boxes: tuple[tuple[int, int], ...] = ()
+
+    def box(self, index: int) -> tuple[int, int]:
+        """第 *index* 个对象的显示框像素尺寸。"""
+        if index < len(self.boxes):
+            return self.boxes[index]
+        return self.width_px, self.height_px
 
 
 @dataclass(frozen=True)

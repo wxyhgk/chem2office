@@ -272,16 +272,26 @@ def test_vml_anchor_matches_the_drawing_after_normalisation(tmp_path, monkeypatc
 
 
 def test_ordinary_insert_anchor_is_unchanged(tmp_path, monkeypatch):
-    """Normalisation must be a no-op when the box fits its cell."""
+    """Normalisation must be a no-op when the box fits its cell.
+
+    The box comes from `_fit_box`: `test.cdx` is taller than wide (aspect
+    0.866), so the default 145×100 box fits to 87×100 px.
+    """
+    from retain_cdx.office.excel._insert.plan import _fit_box
+    from retain_cdx.structure.geometry import cdx_content_aspect
+
     patch_preview_renderers(monkeypatch)
     out = tmp_path / "out.xlsx"
     with ExcelCDXWriter("tests/fixtures/blank.xlsx") as writer:
         writer.insert_cdx(CDX, sheet="Sheet1", cell="B2")
         writer.save(out)
 
+    box_w, _ = _fit_box(cdx_content_aspect(Path(CDX).read_bytes()), 145, 100)
+    assert box_w == 87, "fixture aspect changed; the expected offset below moves"
+
     with zipfile.ZipFile(out) as archive:
         drawing = archive.read("xl/drawings/sheet1_retain_drawing.xml").decode()
     to_block = re.search(r"<xdr:to>[\s\S]*?</xdr:to>", drawing).group(0)
     assert "<xdr:col>1</xdr:col>" in to_block
-    assert "<xdr:colOff>1381125</xdr:colOff>" in to_block
+    assert "<xdr:colOff>828675</xdr:colOff>" in to_block  # 87px × EMU_PER_PIXEL
     assert "<xdr:row>1</xdr:row>" in to_block
