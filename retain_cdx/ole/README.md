@@ -22,12 +22,13 @@ Excel/PowerPoint 仍然认这个容器。
 最后半句才是难点。历史上因为 FAT 常量写错，Excel 打开时会「修复」文件、
 把 OLE 对象整个删掉，只剩一张预览图。
 
-## 五个文件
+## 六个文件
 
 ```
 embed.py     决策层：该补丁还是该重建         ← 唯一对外入口
 ├─ inject.py         就地补丁（改现成容器）
-├─ presentation.py   演示流：对象的缓存渲染（PPT 侧才要）
+├─ presentation.py   演示流：对象的缓存渲染（PPT / Excel）
+├─ eprint.py         Word 容器的 \x03EPRINT（缓存 EMF）与 \x03ObjInfo
 └─ chemdraw.py       ChemDraw 身份：哪三个流、CLSID、ProgID
    └─ cfbf/          通用复合文件写入器（不认识化学）
         const.py  layout.py  alloc.py  directory.py  header.py
@@ -42,7 +43,10 @@ embed.py     决策层：该补丁还是该重建         ← 唯一对外入口
 |---|---|
 | 新载荷更大 | 原坑位塞不下 |
 | 跨过 4096 字节分界 | 小于 4096 的流走 mini 流，跨界后起始扇区号会被按错误的分配表解析 |
-| 容器带 `\x02OlePres000` | 那是上一个分子的渲染缓存，留着会显示错的分子（PowerPoint 的容器有） |
+| 容器带 `\x02OlePres000` 或 `\x03EPRINT` | 那是上一个分子的渲染缓存，留着会显示错的分子（PowerPoint / Word 的容器有） |
+
+`extra_streams=` 原样附加额外的流（Word 用它放 `\x03EPRINT` / `\x03ObjInfo`），
+和 `presentation=` 一样强制重建。
 
 否则走补丁——快，而且模板里其它一切原样保留。
 
@@ -109,11 +113,22 @@ EMF 和 WMF 从同一份 SVG 导出，在同一次 `inkscape --shell` 打开里�
 矢量管线不划算。代价是每个对象多 10~15 KB——几千个结构的表要多几十 MB，
 用 `presentation_cache=False` 关掉。
 
+### `eprint.py` — Word 的缓存
+
+Word 容器不带 `\x02OlePres000`，而是多两个流：
+
+- `\x03EPRINT`：**就是预览 EMF 本身**，与 `word/media/imageN.emf` 逐字节相同。
+  没有 WMF 包装、没有校验和、没有 64 KB 上限——比 PowerPoint 的演示流简单得多。
+  只有 EMF 预览才挂；`presentation_cache` 的三态语义与另两个格式一致。
+- `\x03ObjInfo`：6 字节 `00 00 03 00 0d 00`（MS-DOC 的 ODT），照抄样本。
+
+细节见 `docs/word_ole_research.md`。
+
 ### `chemdraw.py` — 「ChemDraw 是什么」
 
 全部化学侧知识都在这 70 行里：CLSID、ProgID、`\x01Ole` 的 20 字节、
 `\x01CompObj` 的构造。这三个流与 Windows 产出的模板**逐字节一致**
-（有测试盯着），CLSID 与 ProgID 在 Excel / PowerPoint 两侧通用。
+（有测试盯着），CLSID 与 ProgID 在 Excel / PowerPoint / Word 三侧通用。
 
 `build_chemdraw_ole()` 只是组好流表，交给下面的通用写入器。
 
@@ -161,8 +176,9 @@ header(512B)  FAT×n  目录×n  mini-FAT×n  mini流×n  大流…
 
 ## 与 Office 层的关系
 
-本层不知道 Excel / PowerPoint 的存在，只吐 `.bin` 字节。
+本层不知道 Excel / PowerPoint / Word 的存在，只吐 `.bin` 字节。
 谁把它放进包里、怎么写 rels 和锚点，是 `office/` 的事。
 
 延伸阅读：`docs/excel_ooxml_research.md`（C1/C2 容器缺陷）、
-`docs/powerpoint_ole_research.md`（PPT 容器多出的演示流）。
+`docs/powerpoint_ole_research.md`（PPT 容器多出的演示流）、
+`docs/word_ole_research.md`（Word 容器的 EPRINT / ObjInfo）。

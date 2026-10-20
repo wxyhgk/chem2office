@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
+<CDXML CreationProgram="Structura" BoundingBox="50 50 120.35 74.94" LabelFont="3" LabelSize="10" LabelFace="96" CaptionFont="3" CaptionSize="10" HashSpacing="2.5" MarginWidth="1.6" LineWidth="0.6" BoldWidth="2" BondLength="14.4" BondSpacing="18" ChainAngle="120" LabelJustification="Auto" CaptionJustification="Left" InterpretChemically="yes" color="0" bgcolor="1">
+<colortable>
+<color r="1" g="1" b="1"/>
+<color r="0" g="0" b="0"/>
+</colortable>
+<fonttable>
+<font id="3" charset="iso-8859-1" name="Arial"/>
+</fonttable>
+<page id="1" BoundingBox="0 0 540 720" HeaderPosition="36" FooterPosition="36" PrintTrimMarks="yes" WidthPages="1" HeightPages="1">
+<fragment id="21">
+<n id="2" p="78.8 62.47"/>
+<n id="3" p="71.6 50"/>
+<n id="4" p="57.2 50"/>
+<n id="5" p="50 62.47"/>
+<n id="6" p="57.2 74.94"/>
+<n id="7" p="71.6 74.94"/>
+<n id="8" p="93.2 62.47"/>
+<n id="9" p="100.4 74.94" Element="8" NumHydrogens="0">
+<t p="97 78.44" LabelJustification="Left"><s font="3" size="10">O</s></t>
+</n>
+<n id="10" p="100.4 50" Element="8" Charge="-1" NumHydrogens="0">
+<t p="97 53.5" LabelJustification="Left"><s font="3" size="10">O</s><s font="3" size="10" face="64">-</s></t>
+</n>
+<b id="12" B="2" E="3" Order="2"/>
+<b id="13" B="3" E="4"/>
+<b id="14" B="4" E="5" Order="2"/>
+<b id="15" B="5" E="6"/>
+<b id="16" B="6" E="7" Order="2"/>
+<b id="17" B="7" E="2"/>
+<b id="18" B="2" E="8"/>
+<b id="19" B="8" E="9" Order="2"/>
+<b id="20" B="8" E="10"/>
+</fragment>
+<fragment id="22">
+<n id="11" p="120.35 52.88" Element="11" Charge="1" NumHydrogens="0">
+<t p="116.95 56.38" LabelJustification="Left"><s font="3" size="10">Na</s><s font="3" size="10" face="64">+</s></t>
+</n>
+</fragment>
+</page>
+</CDXML>

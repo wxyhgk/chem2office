@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+### Word 支持：`WordCDXWriter`
+
+往已有的 `.docx` 里放可编辑的 ChemDraw 对象。依据是一份 Windows Word 16 +
+ChemDraw 的真实样本（原样入库为 `retain_cdx/data/template.docx`），解剖记录在
+`docs/word_ole_research.md`。
+
+- 对象随文字排版（`w:r` 里的 `w:object`，只有 VML），三种落点：文字占位符
+  （跨 run、表格单元格里都能匹配）、某个顶层段落末尾、文末新段落（可对齐）。
+- 尺寸永远保持分子比例：只给一边按比例补另一边，两边都给则按比例塞进框里。
+- 容器与 Windows Word 产物同构：除共有的三个流外带 `\x03ObjInfo`，矢量预览时
+  带 `\x03EPRINT`——它就是预览 EMF 本身，比 PowerPoint 的演示流简单得多。
+  `presentation_cache` 三态语义与另两个格式一致。
+- VML shape id、`ObjectID` 扫描全部 `word/*.xml` 后分配；`_x0000_t75`
+  shapetype 只定义一次；克隆来的 `w14:anchorId` 去掉。
+- 写回 `document.xml` 时补回只为 `mc:Ignorable` 存在的命名空间声明
+  （ElementTree 会丢，与 PowerPoint 的 `xmlns:v` 同一根因）。
+- 实测 python-docx 1.2 建的文档可直接用，它再保存我们的输出也不丢 OLE 对象。
+
+其它：
+
+- `write_cdx_to_ole` 新增 `extra_streams=`；`\x03EPRINT` 与 `\x02OlePres000`
+  一样被视为陈旧缓存，就地补丁 Word 容器时会重建。
+- rels / 内容类型 / 部件命名从 PowerPoint 私有模块上提到 `office/_opc.py`，
+  PowerPoint 与 Word 共用（格式之间不互相 import 的规矩）。
+- `tests/ooxml_checks.py` 新增 Word 检查：shape id、ObjectID、shapetype 不得重复。
+
+**尚未在 Windows Word 上验证**：打开不报修复、双击进 ChemDraw、带不带
+`\x03EPRINT` 时复制出去的行为。见 `docs/word_ole_research.md` §八。
+
+### Structura 化合物表 → 专利式 Word 表格
+
+- `StructureSource.from_cdxml(路径/文本/字节)`：CDXML 经 pycdxml 原样转 CDX，
+  坐标、朝向、标签不变（与走 SMILES 时 RDKit 重新排版不同）。
+- `CompoundTable.load(zip 或目录)`：读 Structura「化合物表」包 v1
+  （`manifest.json` + `cdxml/*.cdxml`），文件名取 `file` 字段，路径不得越出包。
+- `WordCDXWriter.insert_compound_table(table, columns=, scale=, placeholder=)`：
+  每组一行结构 + 一行编号，整张表一个缩放系数（默认最宽的结构刚好放进一列），
+  返回所用系数。组内两行不跨页拆开。
+- CLI：`python3 -m scripts.cli.structura_table_to_docx --input X.zip --output Y.docx`。
+- `WordCDXWriter()` 不传文件时从空白 A4 文档开始（内置模板去掉内容与作者信息）。
+- 渲染层新增 `natural_size` / `render_previews_at_natural_scale`；
+  `render_emf_many(exact_frame=True)` 把 EMF 画框改写成页面精确尺寸
+  （Inkscape 的画框会向右下多出最多约 1 mm 空白，读回 EMF 核实过）。
+- 修复：多片段的结构（盐、溶剂合物）预览只画第一个片段。`mol_from_cdx` 现在
+  合并所有片段，三个格式的预览都受益。
+- 内容几何：没有 fragment BoundingBox 的 CDX（Structura 的 CDXML 就没有）改用
+  原子坐标算比例，`content_aspect` 不再返回 `None`。
+
 ### Excel 里的结构不再变形
 
 从 Excel 复制结构到 PowerPoint，有些分子会被拉伸——咖啡因横向拉了 18%，而

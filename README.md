@@ -1,4 +1,4 @@
-# ChemDraw OLE 注入（Excel / PowerPoint）
+# ChemDraw OLE 注入（Excel / PowerPoint / Word）
 
 这个仓库实现了 ChemDraw 的 “OLE 模板注入” 流程，在 Linux/macOS 下批量生成
 可编辑的 ChemDraw OLE。默认模式会直接复用包内内置的模板
@@ -46,11 +46,13 @@ Excel OLE 生成器。
   - `retain_cdx/office/powerpoint/` - PowerPoint 幻灯片 OLE 写入
     （只负责摆放分子；做 PPT 交给 python-pptx 之类，见
     `docs/powerpoint_ole_research.md`）。
+  - `retain_cdx/office/word/` - Word 文档 OLE 写入（随文字排版的嵌入对象；
+    文档本身交给 python-docx 之类，见 `docs/word_ole_research.md`）。
   - `retain_cdx/render/` - 预览图渲染（RDKit / Open Babel / EMF）。
   - `retain_cdx/structure/` - 结构来源、归一化、几何。
   - `retain_cdx/ole/` - CFBF/OLE 容器读写。
-  - `retain_cdx/data/template.xlsx`、`template.pptx` - 内置模板
-    （由 Windows Excel/PowerPoint + ChemDraw 产出，提供 OLE 容器与骨架）。
+  - `retain_cdx/data/template.xlsx`、`template.pptx`、`template.docx` - 内置模板
+    （由 Windows Excel/PowerPoint/Word + ChemDraw 产出，提供 OLE 容器与骨架）。
 - `scripts/` - 脚本目录。
   - `scripts/cli/` - CLI 入口（`python3 -m scripts.cli.<名称>` 运行），
     全部基于 `retain_cdx` 公共 API 实现：
@@ -58,12 +60,14 @@ Excel OLE 生成器。
     - `smiles_id_structure_table` - 从 `.smiles` 文件生成「编号 + 结构」表
     - `add_smiles_ole_by_merge` - 给已有数据表插入一列 ChemDraw 结构
     - `make_state_pair_layout` - 生成「OLE + 基态/激发态标签」双行版式
+    - `structura_table_to_docx` - Structura 化合物表包 → 专利式 Word 表格
   - 旧版 `scripts/ole/`、`scripts/render/`、`scripts/xlsx/` 已删除
     （逻辑与 `retain_cdx` 包内实现重复）；新代码请依赖 `retain_cdx`
     公共 API
 - `tests/fixtures/` - 示例输入文件（`san.cdx`、`1.cdx`、`2.cdx` 等）。
 - `docs/` - 开发记录与研究报告。
-  - `excel_ooxml_research.md` / `powerpoint_ole_research.md` - 对真实
+  - `excel_ooxml_research.md` / `powerpoint_ole_research.md` /
+    `word_ole_research.md` - 对真实
     Office 文件的实证解剖，记录了本项目大部分修复的依据。
   - `developer_log.md` - 历史调试记录（路径为当时的目录结构）。
   - `template_reference/` - 内置模板解包后的静态参考文件。
@@ -169,6 +173,63 @@ with PowerPointCDXWriter("deck.pptx") as writer:
 长度支持 `cm/mm/in/pt/px/emu`；宽高只给一个时按分子比例补另一个。
 多个结构可用 `PowerPointGrid(columns=3, cell_width="5cm", cell_height="4cm")` 平铺。
 两个包可以任意先后使用——python-pptx 往返不会丢 OLE 对象。
+
+### Word
+
+对象随文字排版（像一个字符），所以不给坐标，只说「放在文字的哪里」和尺寸。
+文档本身用 `python-docx` 之类去做，最顺手的交接方式是文字占位符：
+
+```python
+from docx import Document
+from retain_cdx import WordCDXWriter
+
+doc = Document()
+table = doc.add_table(rows=1, cols=2)
+table.cell(0, 0).text = "咖啡因"
+table.cell(0, 1).text = "{{caffeine}}"
+doc.save("report.docx")
+
+with WordCDXWriter("report.docx") as writer:
+    writer.insert_cdx(caffeine, placeholder="{{caffeine}}", height="2cm")
+    writer.insert_cdx(benzene, align="center")   # 文末新段落
+    writer.insert_cdx(san, paragraph=0)          # 第 0 个顶层段落末尾
+    writer.save("report_with_structures.docx")
+```
+
+- 占位符跨多个 run（Word 手打文字常被切开）也能匹配；表格单元格里的也算。
+  批量用 `insert_cdx_many(sources, placeholders=[...])`。
+- 宽高只给一个时按分子比例补另一个；两个都给时分子按比例塞进框里，不拉伸。默认宽 4 cm。
+- 矢量预览时容器带 `\x03EPRINT` 渲染缓存（就是预览 EMF 本身），
+  `PreviewOptions(presentation_cache=False)` 关掉。
+- python-docx 往返不会丢 OLE 对象，两个包可以任意先后使用。
+- `WordCDXWriter()` 不传文件时从一份空白 A4 文档开始。
+
+### Structura 化合物表 → 专利式 Word 表格
+
+Structura 导出的「化合物表」包（zip 或解压后的目录：`manifest.json` + 每个化合物
+一个 CDXML）可以直接排成专利里常见的表：每行若干个结构，结构下面一行是编号。
+
+```bash
+python3 -m scripts.cli.structura_table_to_docx \
+    --input "某专利 化合物表.zip" --output 化合物表.docx [--columns 4] [--scale 0.8]
+```
+
+```python
+from retain_cdx import CompoundTable, WordCDXWriter
+
+table = CompoundTable.load("某专利 化合物表.zip")
+with WordCDXWriter() as writer:                  # 或已有文档 + placeholder="{{compounds}}"
+    scale = writer.insert_compound_table(table)  # columns= / scale= 可覆盖
+    writer.save("化合物表.docx")
+```
+
+- **整张表一个缩放系数**：每个对象 = 结构的自然尺寸 × 同一个系数，所以键长处处
+  相同。自然尺寸是 ACS 1996 画法（键长 14.4 pt）下的大小，`scale=1` 即原大；
+  默认系数让最宽的结构刚好放进一列。
+- 结构走 CDXML 而不是 SMILES：坐标原样保留，同一通式的核心朝向一致。
+  单个文件也能用：`StructureSource.from_cdxml(路径或文本)`。
+- 同一组的结构行和编号行不会被分页拆开；结构高度不同时默认底对齐
+  （`vertical_align=`）。
 
 ## 用法
 

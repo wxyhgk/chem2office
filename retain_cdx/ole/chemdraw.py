@@ -3,7 +3,7 @@
 这里是「ChemDraw 是什么」的全部知识；容器怎么写在 `cfbf.py`，那边不认识化学。
 
 三个流的字节与 Windows Excel + ChemDraw 插入产出的模板**逐字节一致**，
-CLSID 与 ProgID 在 Excel / PowerPoint 两侧通用：
+CLSID 与 ProgID 在 Excel / PowerPoint / Word 三侧通用：
 
 ``\\x01Ole``
     20 字节固定内容，声明这是嵌入对象（不是链接）。

@@ -8,10 +8,10 @@
 ## 一句话分工
 
 ```
-结构从哪来        →  structure/     SMILES / CDX / CDXML，归一化与几何
+结构从哪来        →  structure/     SMILES / CDX / CDXML / 化合物表包，归一化与几何
 装进什么容器      →  ole/           CFBF（.bin），ChemDraw 的 CONTENTS 流
 预览图怎么画      →  render/        RDKit ACS1996 / Open Babel，PNG 与矢量 EMF
-往哪个文档里放    →  office/        excel/ 与 powerpoint/
+往哪个文档里放    →  office/        excel/、powerpoint/ 与 word/
 ```
 
 前三个与 Office 格式**完全无关**，可以单独使用；`office/` 才关心
@@ -33,7 +33,11 @@ from retain_cdx import (
     PowerPointPlacement,   # 绝对 EMU 框，支持 cm/mm/in/pt/px/emu
     PowerPointGrid,        # 网格平铺
 
-    StructureSource,       # from_cdx / from_smiles，可 normalized()
+    WordCDXWriter,         # 往已有 .docx 放分子：占位符 / 段落末尾 / 新段落
+
+    StructureSource,       # from_cdx / from_cdxml / from_smiles，可 normalized()
+    CompoundTable,         # Structura 化合物表包（zip / 目录）→ 一组 Compound
+    Compound,              # 编号 + 结构 + 分子式等
     PreviewOptions,        # 预览格式/后端/尺寸（两个 writer 共用）
 )
 ```
@@ -45,7 +49,8 @@ from retain_cdx import (
 | 模块 | 职责 |
 |---|---|
 | `source.py` | `StructureSource`：CDX 字节 + 名称，`from_smiles` 可传 ChemDraw 样式 |
-| `converters.py` | SMILES → CDX（经 pycdxml/RDKit） |
+| `converters.py` | SMILES → CDX（经 pycdxml/RDKit，会重新排版）；CDXML → CDX（原样） |
+| `compound_table.py` | Structura「化合物表」包 v1：读 manifest，按 `file` 取 CDXML |
 | `normalize.py` | 改写 CDX 的 viewbox，让分子按目标比例/填充率排布 |
 | `geometry.py` | 从 CDX 读内容宽高比，供显示框贴合使用 |
 
@@ -56,11 +61,12 @@ from retain_cdx import (
 | `embed.py` | 唯一入口 `write_cdx_to_ole`：能就地补丁就补丁，否则重建 |
 | `inject.py` | 写入既有流、按 FAT 链定位并修补目录项长度 |
 | `chemdraw.py` | ChemDraw 身份：CLSID / ProgID / 三个流长什么样 |
+| `eprint.py` | Word 容器多出的 `\x03EPRINT`（缓存 EMF）与 `\x03ObjInfo` |
 | `cfbf/` | 通用复合文件写入器，不认识化学（按格式结构分 5 个模块） |
 
 细节见 `ole/README.md`。
 
-三个流与 Windows 产物逐字节一致，CLSID 与 ProgID 跨 Excel / PowerPoint 通用。
+三个流与 Windows 产物逐字节一致，CLSID 与 ProgID 跨 Excel / PowerPoint / Word 通用。
 容器会随载荷增长到所需的 FAT / mini-FAT / 目录扇区数——早期写死单个 FAT 扇区，
 导致超过 63,488 字节的 CDX 静默损坏（见 `docs/excel_ooxml_research.md` C1）。
 
@@ -70,6 +76,11 @@ from retain_cdx import (
 ### `render/` — 预览图这一侧
 
 `preview.py` 一个模块，对外提供 `render_preview` / `render_emf_many` 等。
+`render_previews_at_natural_scale` 给专利表用：预览不 letterbox、不留白，配合
+`natural_size` 让同一系数下所有结构键长相同；EMF 的画框会被改写成页面的精确
+尺寸——Inkscape 写的画框会向右下多出最多约 1 mm 空白，Office 按画框缩放，
+扁平分子在高度上会被压最多约 3.5%（Excel/PPT 的常规路径目前也有这个问题，
+尚未改动）。
 默认 RDKit ACS 1996（单色期刊风格），不可用时回退 Open Babel。
 EMF 走矢量路径（ACS SVG → letterbox → Inkscape），批量渲染时用常驻
 `inkscape --shell` 进程，比逐个冷启动快得多。
@@ -82,33 +93,38 @@ PowerPoint 的原生容器确实带演示流，但我们不复制陈旧的那份
 ```
 office/
   _package.py   extract_ooxml / pack_ooxml —— 任何 OOXML 都是 ZIP
+  _opc.py       rels / 内容类型 / 部件命名（PowerPoint 与 Word 共用）
   _units.py     EMU / px / pt 换算
   options.py    PreviewOptions（与格式无关，两个 writer 共用）
   excel/        SpreadsheetML：网格、三套锚点、VML
   powerpoint/   PresentationML：绝对 EMU，无网格无 VML
+  word/         WordprocessingML：随文字排版，只有 VML
 ```
 
-**硬规则：`excel/` 与 `powerpoint/` 互不相识。** 两者共用的东西放 `office/` 层，
+**硬规则：`excel/`、`powerpoint/`、`word/` 互不相识。** 两者共用的东西放 `office/` 层，
 不允许跨格式 import 对方的 `_` 私有模块。这条规则是补出来的——PowerPoint 最初
 伸手拿了 Excel 的 `_ooxml`、`_utils` 私有模块，而拿的三样东西根本不属于 Excel。
 
 两个格式的难度差别很大：
 
-| | Excel | PowerPoint |
-|---|---|---|
-| 定位 | 三套锚点（worksheet / drawing / VML）必须一致 | 一处 `p:xfrm`，绝对 EMU |
-| 网格 | 列宽像素依赖工作簿字体的 max digit width | 不看行列 |
-| VML | 必需 | 不存在 |
-| 元素顺序 | CT_Worksheet 固定序列，插错即触发修复 | `p:spTree` 追加即可 |
+| | Excel | PowerPoint | Word |
+|---|---|---|---|
+| 定位 | 三套锚点（worksheet / drawing / VML）必须一致 | 一处 `p:xfrm`，绝对 EMU | 文字流里的位置，只给宽高 |
+| 网格 | 列宽像素依赖工作簿字体的 max digit width | 不看行列 | 不看行列 |
+| VML | 必需 | 不存在 | 必需，且是唯一显示层 |
+| 元素顺序 | CT_Worksheet 固定序列，插错即触发修复 | `p:spTree` 追加即可 | `w:sectPr` 必须留在 body 最后 |
+| 容器额外的流 | 渲染缓存 `\x02OlePres000` | `\x02OlePres000` | `\x03EPRINT` + `\x03ObjInfo` |
 
 Excel 的内部分层另见 `office/excel/README.md`。PowerPoint 只有三个模块：
 `writer.py`（门面）、`_pml.py`（幻灯片手术）、`options.py`（定位与网格）。
+Word 两个：`writer.py`（门面）、`_wml.py`（document.xml 手术：占位符拆分、
+shape id / ObjectID 分配、shapetype 只定义一次）。
 
 ### `data/`
 
-`template.xlsx` 与 `template.pptx`：由 Windows Excel / PowerPoint + ChemDraw
-真实插入产出的模板，提供 OLE 容器与骨架 XML。**它们是零件供体，不是你的起点**
-——PowerPoint 侧必须传入自己的 `.pptx`。
+`template.xlsx`、`template.pptx` 与 `template.docx`：由 Windows Excel /
+PowerPoint / Word + ChemDraw 真实插入产出的模板，提供 OLE 容器与骨架 XML。**它们是零件供体，不是你的起点**
+——PowerPoint / Word 侧必须传入自己的 `.pptx` / `.docx`。
 
 ## 依赖方向
 
@@ -117,7 +133,7 @@ Excel 的内部分层另见 `office/excel/README.md`。PowerPoint 只有三个�
               ↘      ↓      ↙
                   office/                 _package / _units / options
                   ↙      ↘
-             excel/       powerpoint/     互不相识
+      excel/    powerpoint/    word/      互不相识
 ```
 
 - 下层不 import 上层；`office/` 不 import 具体 writer。
@@ -133,12 +149,14 @@ Excel 的内部分层另见 `office/excel/README.md`。PowerPoint 只有三个�
   必须按 schema 序列排位。
 - **ElementTree 会丢掉「声明了但没被元素使用」的命名空间**，而 MCE 恰恰依赖
   这种声明。同一个根因造成过 PowerPoint 报修复（`xmlns:v`）和 Excel 丢
-  `mc:Ignorable` 前缀。凡碰 `mc:` 都要手动兜。
+  `mc:Ignorable` 前缀；Word 的根元素声明了二十多个只为 `Ignorable` 存在的前缀，
+  写回时整体补回。凡碰 `mc:` 都要手动兜。
 - **列宽的单位是工作簿字体的 max digit width，不是固定 7px。** 内置模板自己
   就是等线（8px）工作簿。
-- **openpyxl 会丢 OLE 对象，python-pptx 不会。** 所以 Excel 侧我们必须收尾，
-  PPT 侧两个库可以任意穿插。
+- **openpyxl 会丢 OLE 对象，python-pptx 与 python-docx 不会。** 所以 Excel 侧
+  我们必须收尾，PPT / Word 侧两个库可以任意穿插。
 
-完整审计见 `docs/excel_ooxml_research.md` 与 `docs/powerpoint_ole_research.md`；
-`tests/ooxml_checks.py` 把其中几条固化成了包级校验（关系悬空、内容类型缺失、
-shape id 重复、`Requires`/`Ignorable` 前缀未声明）。
+完整审计见 `docs/excel_ooxml_research.md`、`docs/powerpoint_ole_research.md` 与
+`docs/word_ole_research.md`；`tests/ooxml_checks.py` 把其中几条固化成了包级校验
+（关系悬空、内容类型缺失、shape id 重复、`Requires`/`Ignorable` 前缀未声明、
+Word 的 VML shape id / ObjectID / shapetype 重复）。

@@ -24,6 +24,27 @@ class StructureSource:
         return cls(cdx_data=data, name=name or cdx_path.stem)
 
     @classmethod
+    def from_cdxml(
+        cls, cdxml: str | bytes | Path, *, name: str | None = None
+    ) -> "StructureSource":
+        """Build from a CDXML file path, or the CDXML text itself.
+
+        The drawing is converted to CDX as-is (via pycdxml): coordinates,
+        orientation and labels are kept, nothing is re-laid out.
+        """
+        from .converters import cdxml_to_cdx_bytes
+
+        if isinstance(cdxml, bytes):
+            text = cdxml.decode("utf-8")
+        elif isinstance(cdxml, str) and cdxml.lstrip().startswith("<"):
+            text = cdxml
+        else:
+            path = Path(cdxml)
+            text = path.read_text(encoding="utf-8")
+            name = name or path.stem
+        return cls(cdx_data=cdxml_to_cdx_bytes(text), name=name or "structure")
+
+    @classmethod
     def from_smiles(
         cls,
         smiles: str,

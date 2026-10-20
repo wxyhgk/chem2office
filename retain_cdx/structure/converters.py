@@ -37,3 +37,14 @@ def smiles_to_cdx_bytes(
         cdx_path = Path(tmp) / "structure.cdx"
         write_cdx_file(doc, cdx_path)
         return cdx_path.read_bytes()
+
+
+def cdxml_to_cdx_bytes(cdxml: str) -> bytes:
+    """CDXML text → binary CDX, keeping the drawing exactly as authored.
+
+    Unlike the SMILES path nothing is re-laid out: coordinates, labels and
+    styles carry over, which is the point of handing structures over as CDXML.
+    """
+    from pycdxml.cdxml_converter.chemdraw_objects import ChemDrawDocument
+
+    return ChemDrawDocument.from_cdxml(cdxml).to_bytes()

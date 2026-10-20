@@ -6,13 +6,15 @@ import olefile
 
 from .cfbf import MINI_STREAM_CUTOFF
 from .chemdraw import build_chemdraw_ole
+from .eprint import EPRINT_STREAM
 from .presentation import PRESENTATION_STREAM
 from .inject import inject_cdx_stream, patch_direntry_size
 
 # Streams caching a rendering of the old molecule (PowerPoint containers carry
-# \x02OlePres000). We cannot regenerate them, and a cache that disagrees with
-# CONTENTS is worse than none — Excel's own ChemDraw containers ship without.
-_PRESENTATION_PREFIX = "\x02OlePres"
+# \x02OlePres000, Word containers \x03EPRINT). We cannot regenerate them, and a
+# cache that disagrees with CONTENTS is worse than none — Excel's own ChemDraw
+# containers ship without.
+_STALE_CACHE_PREFIXES = ("\x02OlePres", EPRINT_STREAM)
 
 
 def write_cdx_to_ole(
@@ -22,6 +24,7 @@ def write_cdx_to_ole(
     template_ole: bytes | None = None,
     stream_name: str = "CONTENTS",
     presentation: bytes | None = None,
+    extra_streams: dict[str, bytes] | None = None,
 ) -> None:
     """Write *cdx_path* into a ChemDraw OLE container.
 
@@ -33,17 +36,19 @@ def write_cdx_to_ole(
     the object still activates, but copying it out of PowerPoint degrades to a
     picture — see `presentation.py`. Supplying it forces a rebuild so the cache
     cannot disagree with CONTENTS.
+
+    *extra_streams* are written alongside CONTENTS verbatim (Word's
+    ``\x03EPRINT`` / ``\x03ObjInfo``); like *presentation* they force a rebuild.
     """
     if template_ole is not None:
         ole_path.write_bytes(template_ole)
 
     cdx_data = cdx_path.read_bytes()
+    streams = dict(extra_streams or {})
     if presentation is not None:
-        ole_path.write_bytes(
-            build_chemdraw_ole(
-                cdx_data, extra_streams={PRESENTATION_STREAM: presentation}
-            )
-        )
+        streams[PRESENTATION_STREAM] = presentation
+    if streams:
+        ole_path.write_bytes(build_chemdraw_ole(cdx_data, extra_streams=streams))
         return
     if _needs_rebuild(ole_path, stream_name, len(cdx_data)):
         ole_path.write_bytes(build_chemdraw_ole(cdx_data))
@@ -71,4 +76,4 @@ def _needs_rebuild(ole_path: Path, stream_name: str, new_size: int) -> bool:
     # sector being resolved against the wrong allocator.
     if (old_size >= MINI_STREAM_CUTOFF) != (new_size >= MINI_STREAM_CUTOFF):
         return True
-    return any(name.startswith(_PRESENTATION_PREFIX) for name in names)
+    return any(name.startswith(_STALE_CACHE_PREFIXES) for name in names)

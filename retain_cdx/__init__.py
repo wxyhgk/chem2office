@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .structure import StructureSource
+from .structure import Compound, CompoundTable, StructureSource
 from .office.excel import (
     ExcelCellAlignment,
     ExcelDisplayOptions,
@@ -10,8 +10,11 @@ from .office.excel import (
     ExcelShellTemplate,
 )
 from .office.powerpoint import PowerPointCDXWriter, PowerPointGrid, PowerPointPlacement
+from .office.word import WordCDXWriter
 
 __all__ = [
+    "Compound",
+    "CompoundTable",
     "ExcelCellAlignment",
     "ExcelDisplayOptions",
     "ExcelCDXWriter",
@@ -22,6 +25,7 @@ __all__ = [
     "PowerPointGrid",
     "PowerPointPlacement",
     "StructureSource",
+    "WordCDXWriter",
     "__version__",
 ]
 

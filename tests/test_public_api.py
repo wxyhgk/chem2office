@@ -13,16 +13,16 @@ def test_exported_names_are_format_explicit():
     The Excel names predate PowerPoint support and carried no qualifier, which
     left `Placement` and `DisplayOptions` looking format-neutral.
     """
-    shared = {"StructureSource", "PreviewOptions"}
+    shared = {"StructureSource", "PreviewOptions", "Compound", "CompoundTable"}
     for name in set(retain_cdx.__all__) - {"__version__"} - shared:
-        assert name.startswith(("Excel", "PowerPoint")), (
+        assert name.startswith(("Excel", "PowerPoint", "Word")), (
             f"{name} does not say which format it belongs to"
         )
 
 
 def test_shared_names_carry_no_format_prefix():
     for name in ("StructureSource", "PreviewOptions"):
-        assert not name.startswith(("Excel", "PowerPoint"))
+        assert not name.startswith(("Excel", "PowerPoint", "Word"))
         assert hasattr(retain_cdx, name)
 
 

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
+<CDXML CreationProgram="Structura" BoundingBox="50 50 461.22 100.86" LabelFont="3" LabelSize="10" LabelFace="96" CaptionFont="3" CaptionSize="10" HashSpacing="2.5" MarginWidth="1.6" LineWidth="0.6" BoldWidth="2" BondLength="14.4" BondSpacing="18" ChainAngle="120" LabelJustification="Auto" CaptionJustification="Left" InterpretChemically="yes" color="0" bgcolor="1">
+<colortable>
+<color r="1" g="1" b="1"/>
+<color r="0" g="0" b="0"/>
+</colortable>
+<fonttable>
+<font id="3" charset="iso-8859-1" name="Arial"/>
+</fonttable>
+<page id="1" BoundingBox="0 0 540 720" HeaderPosition="36" FooterPosition="36" PrintTrimMarks="yes" WidthPages="1" HeightPages="1">
+<fragment id="76">
+<n id="2" p="78.8 62.47"/>
+<n id="3" p="71.6 50"/>
+<n id="4" p="57.2 50"/>
+<n id="5" p="50 62.47"/>
+<n id="6" p="57.2 74.94"/>
+<n id="7" p="71.6 74.94"/>
+<n id="8" p="93.2 62.47"/>
+<n id="9" p="100.4 74.94" Element="8" NumHydrogens="0">
+<t p="97 78.44" LabelJustification="Left"><s font="3" size="10">O</s></t>
+</n>
+<n id="10" p="100.4 50" Element="8" Charge="-1" NumHydrogens="0">
+<t p="97 53.5" LabelJustification="Left"><s font="3" size="10">O</s><s font="3" size="10" face="64">-</s></t>
+</n>
+<b id="40" B="2" E="3" Order="2"/>
+<b id="41" B="3" E="4"/>
+<b id="42" B="4" E="5" Order="2"/>
+<b id="43" B="5" E="6"/>
+<b id="44" B="6" E="7" Order="2"/>
+<b id="45" B="7" E="2"/>
+<b id="46" B="2" E="8"/>
+<b id="47" B="8" E="9" Order="2"/>
+<b id="48" B="8" E="10"/>
+</fragment>
+<fragment id="77">
+<n id="11" p="120.35 52.88" Element="11" Charge="1" NumHydrogens="0">
+<t p="116.95 56.38" LabelJustification="Left"><s font="3" size="10">Na</s><s font="3" size="10" face="64">+</s></t>
+</n>
+</fragment>
+<fragment id="78">
+<n id="12" p="249.23 62.47"/>
+<n id="13" p="242.03 50"/>
+<n id="14" p="227.63 50"/>
+<n id="15" p="220.43 62.47"/>
+<n id="16" p="227.63 74.94"/>
+<n id="17" p="242.03 74.94"/>
+<n id="18" p="263.63 62.47"/>
+<n id="19" p="270.83 74.94" Element="8" NumHydrogens="0">
+<t p="267.43 78.44" LabelJustification="Left"><s font="3" size="10">O</s></t>
+</n>
+<n id="20" p="270.83 50" Element="8" Charge="-1" NumHydrogens="0">
+<t p="267.43 53.5" LabelJustification="Left"><s font="3" size="10">O</s><s font="3" size="10" face="64">-</s></t>
+</n>
+<n id="22" p="206.03 62.47" Element="8" NumHydrogens="0">
+<t p="202.63 65.97" LabelJustification="Left"><s font="3" size="10">O</s></t>
+</n>
+<n id="23" p="198.83 50"/>
+<b id="49" B="12" E="13" Order="2"/>
+<b id="50" B="13" E="14"/>
+<b id="51" B="14" E="15" Order="2"/>
+<b id="52" B="15" E="16"/>
+<b id="53" B="16" E="17" Order="2"/>
+<b id="54" B="17" E="12"/>
+<b id="55" B="12" E="18"/>
+<b id="56" B="18" E="19" Order="2"/>
+<b id="57" B="18" E="20"/>
+<b id="58" B="15" E="22"/>
+<b id="59" B="22" E="23"/>
+</fragment>
+<fragment id="79">
+<n id="21" p="290.79 52.88" Element="11" Charge="1" NumHydrogens="0">
+<t p="287.39 56.38" LabelJustification="Left"><s font="3" size="10">Na</s><s font="3" size="10" face="64">+</s></t>
+</n>
+</fragment>
+<fragment id="80">
+<n id="24" p="419.67 62.47"/>
+<n id="25" p="412.47 50"/>
+<n id="26" p="398.07 50"/>
+<n id="27" p="390.87 62.47"/>
+<n id="28" p="398.07 74.94"/>
+<n id="29" p="412.47 74.94"/>
+<n id="30" p="434.07 62.47"/>
+<n id="31" p="441.27 74.94" Element="8" NumHydrogens="0">
+<t p="437.87 78.44" LabelJustification="Left"><s font="3" size="10">O</s></t>
+</n>
+<n id="32" p="441.27 50" Element="8" Charge="-1" NumHydrogens="0">
+<t p="437.87 53.5" LabelJustification="Left"><s font="3" size="10">O</s><s font="3" size="10" face="64">-</s></t>
+</n>
+<n id="34" p="376.47 62.47"/>
+<n id="35" p="369.27 74.94"/>
+<n id="36" p="354.87 74.94"/>
+<n id="37" p="347.67 62.47"/>
+<n id="38" p="354.87 50"/>
+<n id="39" p="369.27 50"/>
+<b id="60" B="24" E="25" Order="2"/>
+<b id="61" B="25" E="26"/>
+<b id="62" B="26" E="27" Order="2"/>
+<b id="63" B="27" E="28"/>
+<b id="64" B="28" E="29" Order="2"/>
+<b id="65" B="29" E="24"/>
+<b id="66" B="24" E="30"/>
+<b id="67" B="30" E="31" Order="2"/>
+<b id="68" B="30" E="32"/>
+<b id="69" B="27" E="34"/>
+<b id="70" B="34" E="35" Order="2"/>
+<b id="71" B="35" E="36"/>
+<b id="72" B="36" E="37" Order="2"/>
+<b id="73" B="37" E="38"/>
+<b id="74" B="38" E="39" Order="2"/>
+<b id="75" B="39" E="34"/>
+</fragment>
+<fragment id="81">
+<n id="33" p="461.22 52.88" Element="11" Charge="1" NumHydrogens="0">
+<t p="457.82 56.38" LabelJustification="Left"><s font="3" size="10">Na</s><s font="3" size="10" face="64">+</s></t>
+</n>
+</fragment>
+<t id="82" p="85.18 100.86" Justification="Center" InterpretChemically="no"><s font="3" size="10" face="1">C-1</s></t>
+<t id="83" p="244.81 100.86" Justification="Center" InterpretChemically="no"><s font="3" size="10" face="1">C-2</s></t>
+<t id="84" p="404.44 100.86" Justification="Center" InterpretChemically="no"><s font="3" size="10" face="1">C-3</s></t>
+</page>
+</CDXML>

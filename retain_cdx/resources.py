@@ -24,3 +24,15 @@ def bundled_template_pptx() -> Iterator[Path]:
     resource = files("retain_cdx.data").joinpath("template.pptx")
     with as_file(resource) as path:
         yield path
+
+
+@contextmanager
+def bundled_template_docx() -> Iterator[Path]:
+    """Yield the packaged Word ChemDraw OLE template.
+
+    One paragraph carrying one native Word+ChemDraw object; the writer clones
+    its ``w:object`` for every structure.
+    """
+    resource = files("retain_cdx.data").joinpath("template.docx")
+    with as_file(resource) as path:
+        yield path

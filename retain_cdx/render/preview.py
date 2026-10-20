@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+import re
 import shutil
+import struct
 import subprocess
 import tempfile
 from typing import Any, Literal
@@ -99,7 +101,11 @@ def resolve_preview_backend(requested: PreviewBackend | str = "auto") -> str:
 
 
 def mol_from_cdx(cdx_path: Path) -> Any:
-    """Load the first molecule from a CDX file via pycdxml → CDXML → RDKit."""
+    """Load a CDX file's drawing as one RDKit molecule (pycdxml → CDXML → RDKit).
+
+    RDKit returns one molecule per fragment; they are combined, coordinates
+    and all, so a salt's counter-ion is drawn instead of silently dropped.
+    """
     from pycdxml.cdxml_converter.chemdraw_io import read_cdx
     from rdkit import Chem
     from rdkit.Chem import AllChem, Draw
@@ -111,6 +117,9 @@ def mol_from_cdx(cdx_path: Path) -> Any:
     if not mols:
         raise ValueError(f"No molecules parsed from CDX: {cdx_path}")
     mol = mols[0]
+    if all(m.GetNumConformers() for m in mols):
+        for other in mols[1:]:
+            mol = Chem.CombineMols(mol, other)
     if mol.GetNumConformers() == 0:
         AllChem.Compute2DCoords(mol)
     elif mol.GetNumBonds() > 0:
@@ -601,12 +610,16 @@ def render_emf_many(
     crop_padding: int = 2,
     fill_ratio: float = 0.92,
     companion_wmf_dir: Path | None = None,
+    exact_frame: bool = False,
 ) -> list[str]:
     """Render many CDX→EMF jobs with batched ``inkscape --shell`` exports.
 
     *jobs* is a sequence of ``(cdx_path, emf_path)``. SVG generation is per
     molecule (fast); Inkscape is invoked in chunks so the App is not
     cold-started once per molecule.
+
+    *exact_frame* rewrites each EMF's frame to the SVG page — see
+    `set_emf_frame` for why Inkscape's own frame is off.
     """
     if not jobs:
         return []
@@ -666,8 +679,55 @@ def render_emf_many(
             used_backends.append(used)
 
         svg_to_emf_batch(pairs, companion_wmf_dir=companion_wmf_dir)
+        if exact_frame:
+            for svg_path, emf_path in pairs:
+                width_mm, height_mm = _svg_page_mm(svg_path)
+                set_emf_frame(emf_path, width_mm, height_mm)
 
     return used_backends
+
+
+def _svg_page_mm(svg_path: Path) -> tuple[float, float]:
+    """The SVG's page size (its ``width``/``height``), in millimetres."""
+    text = Path(svg_path).read_text(encoding="utf-8", errors="replace")
+    root = re.search(r"<svg\b[^>]*>", text, flags=re.S)
+    if root is None:
+        raise ValueError(f"No <svg> element in {svg_path}")
+    sizes = []
+    for name in ("width", "height"):
+        match = re.search(rf"\b{name}=[\"']([\d.eE+]+)\s*(px|pt|mm|in)?[\"']", root.group(0))
+        if match is None:
+            raise ValueError(f"No {name} on the <svg> element of {svg_path}")
+        unit = (match.group(2) or "px").lower()
+        per_mm = {"px": 96 / 25.4, "pt": 72 / 25.4, "mm": 1.0, "in": 1 / 25.4}[unit]
+        sizes.append(float(match.group(1)) / per_mm)
+    return sizes[0], sizes[1]
+
+
+def set_emf_frame(emf_path: Path, width_mm: float, height_mm: float) -> None:
+    """Set an EMF's frame (and bounds) to exactly *width_mm* × *height_mm*.
+
+    Inkscape writes a frame larger than the page — up to about 1 mm, the
+    extra being blank space at the right and bottom (checked by reading the
+    EMF back: the drawing sits unscaled at the top left). Office maps the
+    frame, not the drawing, onto the object's box, so that blank band shrinks
+    the drawing by a different fraction for every molecule: up to ~3.5 % in
+    height for a flat one, enough to break "every bond the same length".
+    """
+    data = bytearray(Path(emf_path).read_bytes())
+    record_type, _size = struct.unpack_from("<II", data, 0)
+    if record_type != 1 or data[40:44] != b" EMF":
+        raise ValueError(f"Not an EMF: {emf_path}")
+    device_px = struct.unpack_from("<ii", data, 72)
+    device_mm = struct.unpack_from("<ii", data, 80)
+    frame_w = max(1, round(width_mm * 100))
+    frame_h = max(1, round(height_mm * 100))
+    # Both rectangles are inclusive-inclusive; bounds are in device pixels.
+    struct.pack_into("<4i", data, 24, 0, 0, frame_w - 1, frame_h - 1)
+    bounds_w = max(1, round(width_mm * device_px[0] / device_mm[0]))
+    bounds_h = max(1, round(height_mm * device_px[1] / device_mm[1]))
+    struct.pack_into("<4i", data, 8, 0, 0, bounds_w - 1, bounds_h - 1)
+    Path(emf_path).write_bytes(bytes(data))
 
 
 def letterbox_svg_to_aspect(
@@ -857,6 +917,91 @@ def render_preview(
         fill_ratio=fill_ratio,
     )
     return "png"
+
+
+def natural_size(
+    cdx_path: Path,
+    *,
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+) -> tuple[float, float]:
+    """The structure's drawn size at its own scale, in points.
+
+    ACS 1996 pins the bond length at 14.4 pt — ChemDraw's ACS document
+    setting — so this is the size such a structure has at 100 %, labels and
+    the renderer's padding included. Sizes from different molecules are
+    directly comparable: same bond length, same padding fraction.
+    """
+    with tempfile.TemporaryDirectory(prefix="retain_cdx_natural_") as tmp:
+        svg_path = Path(tmp) / "natural.svg"
+        render_svg(Path(cdx_path), svg_path, mono=mono, style=style, backend=backend)
+        text = svg_path.read_text(encoding="utf-8", errors="replace")
+    box = re.search(
+        r"viewBox=[\"']\s*[-\d.eE+]+\s+[-\d.eE+]+\s+([\d.eE+]+)\s+([\d.eE+]+)", text
+    )
+    if box is None:
+        box = re.search(
+            r"<svg\b[^>]*?\bwidth=[\"']([\d.]+)(?:px|pt)?[\"'][^>]*?\bheight=[\"']([\d.]+)",
+            text,
+            flags=re.S,
+        )
+    if box is None:
+        raise ValueError(f"Cannot read the drawing size of {cdx_path}")
+    width, height = float(box.group(1)), float(box.group(2))
+    if width <= 0 or height <= 0:
+        raise ValueError(f"Empty drawing for {cdx_path}")
+    return width, height
+
+
+def render_previews_at_natural_scale(
+    jobs: Sequence[tuple[Path, Path]],
+    *,
+    format: PreviewFormat | str = "auto",
+    mono: bool = True,
+    style: PreviewStyle = "acs1996",
+    backend: PreviewBackend = "auto",
+    png_pixels_per_point: float = 4.0,
+) -> tuple[ResolvedPreviewFormat, list[tuple[float, float]]]:
+    """Render previews whose drawing fills the image edge to edge, unscaled.
+
+    Returns the format used and each structure's `natural_size`. Display
+    every image at ``natural_size × k`` for one shared ``k`` and all
+    structures come out with the same bond length — what a patent-style
+    table needs. The usual letterbox-into-a-box path cannot promise that: its
+    fixed padding is a different fraction of each molecule.
+
+    EMF stays exact (the viewBox is left as drawn). PNG is drawn at
+    *png_pixels_per_point* (4 ≈ 290 dpi at k = 1).
+    """
+    jobs = [(Path(cdx), Path(out)) for cdx, out in jobs]
+    sizes = [
+        natural_size(cdx, mono=mono, style=style, backend=backend) for cdx, _ in jobs
+    ]
+    resolved = resolve_preview_format(format)
+    if resolved == "emf":
+        render_emf_many(
+            jobs,
+            mono=mono,
+            style=style,
+            backend=backend,
+            target_aspects=[w / h for w, h in sizes],
+            fill_ratio=1.0,
+            crop_padding=0,
+            exact_frame=True,
+        )
+    else:
+        for (cdx, out), (w, h) in zip(jobs, sizes):
+            render_png(
+                cdx,
+                out,
+                width=max(1, round(w * png_pixels_per_point)),
+                height=max(1, round(h * png_pixels_per_point)),
+                mono=mono,
+                style=style,
+                backend=backend,
+            )
+    return resolved, sizes
 
 
 def preview_extension(format: PreviewFormat | str) -> str:

@@ -12,26 +12,28 @@ PPT 侧比 Excel 简单得多（详见 `docs/powerpoint_ole_research.md`）：
 
 from __future__ import annotations
 
-import copy
-import re
 from dataclasses import dataclass
 from pathlib import Path
 import xml.etree.ElementTree as ET
+
+from retain_cdx.office._opc import (
+    REL_IMAGE,
+    REL_OLE,
+    ensure_ole_content_types,
+    next_rid,
+    read_rels,
+    rels_path_for,
+    unique_part_name,
+    write_rels,
+)
 
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 NS_MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 NS_V = "urn:schemas-microsoft-com:vml"
-NS_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
-
-REL_OLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject"
-REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 
 NS = {"p": NS_P, "a": NS_A, "r": NS_R, "mc": NS_MC}
-
-_CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
-_MEDIA_CONTENT_TYPES = {"emf": "image/x-emf", "png": "image/png"}
 
 
 def register_namespaces() -> None:
@@ -83,7 +85,7 @@ class OleFrameTemplate:
         if frame is None:
             raise ValueError(f"No ChemDraw OLE graphicFrame in {slide_path}")
 
-        rels = read_rels(slide_path.parent / "_rels" / f"{slide_path.name}.rels")
+        rels = read_rels(rels_path_for(slide_path))
         ole_target = next(
             (target for _, rel_type, target in rels if rel_type == REL_OLE), None
         )
@@ -111,45 +113,6 @@ class FramePlacement:
     height: int
 
 
-def read_rels(rels_path: Path) -> list[tuple[str, str, str]]:
-    if not rels_path.exists():
-        return []
-    root = ET.parse(rels_path).getroot()
-    return [
-        (el.get("Id"), el.get("Type"), el.get("Target"))
-        for el in root.findall(f"{{{NS_RELS}}}Relationship")
-    ]
-
-
-def write_rels(rels_path: Path, rels: list[tuple[str, str, str]]) -> None:
-    root = ET.Element(f"{{{NS_RELS}}}Relationships")
-    for rid, rel_type, target in rels:
-        ET.SubElement(root, f"{{{NS_RELS}}}Relationship", Id=rid, Type=rel_type, Target=target)
-    rels_path.parent.mkdir(parents=True, exist_ok=True)
-    xml = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
-    xml = xml.replace(b"ns0:", b"").replace(b"xmlns:ns0", b"xmlns")
-    rels_path.write_bytes(xml)
-
-
-def next_rid(rels: list[tuple[str, str, str]]) -> str:
-    used = {
-        int(match.group(1))
-        for rid, _, _ in rels
-        if (match := re.fullmatch(r"rId(\d+)", rid))
-    }
-    return f"rId{max(used, default=0) + 1}"
-
-
-def unique_part_name(directory: Path, desired: str) -> str:
-    candidate = desired
-    index = 2
-    while (directory / candidate).exists():
-        stem, suffix = Path(desired).stem, Path(desired).suffix
-        candidate = f"{stem}_{index}{suffix}"
-        index += 1
-    return candidate
-
-
 def append_ole_frame(
     package_dir: Path,
     *,
@@ -173,7 +136,7 @@ def append_ole_frame(
     image_name = unique_part_name(media_dir, f"image1.{preview_ext}")
     (media_dir / image_name).write_bytes(preview_bytes)
 
-    rels_path = slide_path.parent / "_rels" / f"{slide_path.name}.rels"
+    rels_path = rels_path_for(slide_path)
     rels = read_rels(rels_path)
     ole_rid = next_rid(rels)
     rels.append((ole_rid, REL_OLE, f"../embeddings/{bin_name}"))
@@ -194,7 +157,7 @@ def append_ole_frame(
     tree_element.append(frame)
     write_slide_xml(tree, slide_path)
 
-    ensure_content_types(package_dir, preview_ext)
+    ensure_ole_content_types(package_dir, preview_ext)
 
 
 def _next_shape_id(root: ET.Element) -> int:
@@ -254,36 +217,6 @@ def _apply_placement(frame: ET.Element, placement: FramePlacement) -> None:
         ole_obj.set("imgH", str(placement.height))
 
 
-def ensure_content_types(package_dir: Path, preview_ext: str) -> None:
-    path = package_dir / "[Content_Types].xml"
-    if not path.exists():
-        return
-    tree = ET.parse(path)
-    root = tree.getroot()
-    existing = {
-        element.get("Extension") for element in root.findall(f"{{{_CT_NS}}}Default")
-    }
-    wanted = {
-        "bin": "application/vnd.openxmlformats-officedocument.oleObject",
-        preview_ext: _MEDIA_CONTENT_TYPES.get(preview_ext, "image/x-emf"),
-    }
-    changed = False
-    for extension, content_type in wanted.items():
-        if extension not in existing:
-            ET.SubElement(
-                root,
-                f"{{{_CT_NS}}}Default",
-                Extension=extension,
-                ContentType=content_type,
-            )
-            changed = True
-    if not changed:
-        return
-    xml = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
-    xml = xml.replace(b"ns0:", b"").replace(b"xmlns:ns0", b"xmlns")
-    path.write_bytes(xml)
-
-
 def slide_size(package_dir: Path) -> tuple[int, int]:
     """Slide width/height in EMU."""
     root = ET.parse(package_dir / "ppt" / "presentation.xml").getroot()
@@ -298,9 +231,7 @@ def slide_paths(package_dir: Path) -> list[Path]:
     presentation = package_dir / "ppt" / "presentation.xml"
     rels = {
         rid: target
-        for rid, _type, target in read_rels(
-            presentation.parent / "_rels" / "presentation.xml.rels"
-        )
+        for rid, _type, target in read_rels(rels_path_for(presentation))
     }
     root = ET.parse(presentation).getroot()
     paths: list[Path] = []

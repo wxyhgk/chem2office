@@ -1,0 +1,35 @@
+{
+  "format": "structura-compound-table",
+  "version": 1,
+  "source": "salt-sample",
+  "columns": 3,
+  "compounds": [
+    {
+      "id": "C-1",
+      "file": "cdxml/C-1.cdxml",
+      "formula": "C7H5NaO2",
+      "mw": 144.1,
+      "fields": {
+        "R1": "H"
+      }
+    },
+    {
+      "id": "C-2",
+      "file": "cdxml/C-2.cdxml",
+      "formula": "C8H7NaO3",
+      "mw": 174.13,
+      "fields": {
+        "R1": "OMe"
+      }
+    },
+    {
+      "id": "C-3",
+      "file": "cdxml/C-3.cdxml",
+      "formula": "C13H9NaO2",
+      "mw": 220.2,
+      "fields": {
+        "R1": "Ph"
+      }
+    }
+  ]
+}

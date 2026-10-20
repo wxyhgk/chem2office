@@ -1,0 +1,4 @@
+﻿编号,文件,SMILES,分子式,分子量,R1
+C-1,cdxml/C-1.cdxml,,C7H5NaO2,144.10,H
+C-2,cdxml/C-2.cdxml,,C8H7NaO3,174.13,OMe
+C-3,cdxml/C-3.cdxml,,C13H9NaO2,220.20,Ph

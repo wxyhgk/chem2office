@@ -1,4 +1,4 @@
-"""Package-level validity checks shared by the Excel and PowerPoint tests.
+"""Package-level validity checks shared by the Excel, PowerPoint and Word tests.
 
 These are the checks that caught real defects by hand: a dangling relationship
 target, a part with no declared content type, duplicate shape ids, and an
@@ -28,6 +28,7 @@ def check_package(path: Path | str) -> list[str]:
         problems += _check_content_types(archive, names)
         problems += _check_markup_compatibility(archive, names)
         problems += _check_shape_ids(archive, names)
+        problems += _check_word_object_ids(archive, names)
     return problems
 
 
@@ -108,4 +109,26 @@ def _check_shape_ids(archive: zipfile.ZipFile, names: set[str]) -> list[str]:
         duplicates = {i for i in ids if ids.count(i) > 1}
         if duplicates:
             problems.append(f"{name}: duplicate cNvPr ids {sorted(duplicates)}")
+    return problems
+
+
+def _check_word_object_ids(archive: zipfile.ZipFile, names: set[str]) -> list[str]:
+    """VML shape ids, OLE ObjectIDs and shapetype definitions must not repeat.
+
+    Word identifies an inline OLE object by both its ``v:shape`` id and its
+    ``ObjectID``; a cloned object that keeps either one collides with the
+    original. Shapetypes are defined once and referenced afterwards.
+    """
+    problems = []
+    for name in sorted(n for n in names if re.match(r"word/[^/]+\.xml$", n)):
+        text = archive.read(name).decode("utf-8", "replace")
+        for label, pattern in (
+            ("v:shape ids", r'<v:shape\b[^>]*\bid="([^"]+)"'),
+            ("ObjectIDs", r'\bObjectID="([^"]+)"'),
+            ("v:shapetype ids", r'<v:shapetype\b[^>]*\bid="([^"]+)"'),
+        ):
+            values = re.findall(pattern, text)
+            duplicates = {v for v in values if values.count(v) > 1}
+            if duplicates:
+                problems.append(f"{name}: duplicate {label} {sorted(duplicates)}")
     return problems
