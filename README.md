@@ -81,7 +81,9 @@ Excel OLE 生成器。
 - Python 3.10+
 - `olefile`（`pip install olefile`）
 - 预览图后端（二选一，默认优先 RDKit）：
-  - RDKit + `pycdxml`（`.[chem]` 会安装）— 默认，ACS 1996 期刊风格
+  - RDKit + `pycdxml`（`.[chem]` 会安装）— 默认，ACS 1996 期刊风格。
+    注意：`pycdxml` 目前未发布到 PyPI，需从 GitHub 安装：
+    `pip install git+https://github.com/kienerj/pycdxml`
   - Open Babel 命令行（`obabel`）— 回退方案
 - 可选：`Pillow`（用于预览图裁剪/letterbox，`.[dev]` 会安装）
 - 可选但建议装：Inkscape。预览默认 `preview_format="auto"`——装了就走矢量 EMF
@@ -101,9 +103,11 @@ python -m pip install -U pip
 python -m pip install -e ".[dev]"
 ```
 
-如果需要从 `SMILES` 生成 `CDX`，或使用 CDX 归一化/比例分析能力，还需要安装化学工具链：
+如果需要从 `SMILES` / `SDF` 生成 `CDX`，或使用 CDX 归一化/比例分析能力，
+还需要安装化学工具链。`pycdxml` 目前未发布到 PyPI，需先从 GitHub 安装：
 
 ```bash
+python -m pip install git+https://github.com/kienerj/pycdxml
 python -m pip install -e ".[chem]"
 ```
 
@@ -453,7 +457,39 @@ python3 -m scripts.cli.inject_cdx_into_xlsx --cdx tests/fixtures/san.cdx --outpu
 
 - 当前机器上的 Open Babel 只能读取 `cdx`，不能写 `cdx`。
 - 一条可行路线是使用 `pycdxml` + `rdkit`：
-  - `SDF -> RDKit molecule`
-  - `RDKit molecule -> binary CDX`
+  - `SDF -> RDKit molecule`（`Chem.MolFromMolFile`）
+  - `RDKit molecule -> binary CDX`（`pycdxml` 的 `mol_to_document` + `write_cdx_file`）
   - 再把生成的 `CDX` 注入 Excel
 - `CDXML` 本身不能直接传给当前 CLI 的 `--cdx` 参数。
+
+SDF → CDX 最小示例：
+
+```python
+import tempfile
+from pathlib import Path
+from rdkit import Chem
+from rdkit.Chem import AllChem
+from pycdxml.cdxml_converter.rdkit_chemdraw import mol_to_document
+from pycdxml.cdxml_converter.chemdraw_io import write_cdx_file
+
+mol = Chem.MolFromMolFile("input.sdf")          # 或 Chem.MolFromSmiles("c1ccccc1")
+AllChem.Compute2DCoords(mol)                    # SDF 已含 2D 坐标时可省略
+doc = mol_to_document(mol, chemdraw_style={"BondLength": 24, "LineWidth": 1.2})
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "structure.cdx"
+    write_cdx_file(doc, str(out))
+    cdx_bytes = out.read_bytes()                # 交给 StructureSource(cdx_data=...)
+```
+
+**7) 同一进程内先用过 RDKit，再解析 Office 骨架会段错误**
+
+- 在同一 Python 进程里先调用过 RDKit 的 C 扩展（`MolFromMolFile`、
+  `Compute2DCoords`、`mol_to_document` 等），之后 `xml.etree.ElementTree.parse`
+  解析 xlsx/docx 骨架时会触发段错误（C 层符号冲突，栈顶是
+  `xml.etree.ElementTree.parse`）。
+- 规避方式：把「RDKit 处理分子」和「解析/写入 Office 文件」拆到不同进程
+  （`multiprocessing` / `subprocess`），保证解析 Office 骨架的进程在
+  `xml.etree.parse` 之前没有加载并使用过 RDKit。
+- 直接调用 `insert_cdx_many`（从 CDX 文件出发）不受影响——预览渲染对
+  RDKit 是懒加载，发生在骨架解析之后；只有「同进程内先用 RDKit 读
+  SDF/SMILES，再做 Office 注入」这种组合需要分进程。
